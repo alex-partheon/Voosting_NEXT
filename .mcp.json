@@ -1,0 +1,24 @@
+{
+  "servers": {
+    "tosspayments": {
+      "command": "npx",
+      "args": ["@tosspayments/integration-guide-mcp@latest"],
+      "description": "TossPayments 결제 시스템 통합 가이드 및 1원 인증 API 패턴"
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["@modelcontextprotocol/server-memory"],
+      "description": "세션 상태 관리, 컨텍스트 유지 및 개발 태스크 추적"
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"],
+      "description": "E2E 테스트 자동화, 크로스 브라우저 테스트 및 성능 모니터링"
+    },
+    "git": {
+      "command": "uvx",
+      "args": ["mcp-server-git", "--repository", "/Users/alex/Dev/next/cashup"],
+      "description": "Git 워크플로우 자동화, 코드 리뷰 지원 및 브랜치 관리"
+    }
+  }
+}
