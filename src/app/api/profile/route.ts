@@ -1,13 +1,6 @@
-import { auth } from '@clerk/nextjs/server';
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createServerClient } from '@/lib/supabase/server';
 import type { Database } from '@/types/database.types';
-
-// Supabase 클라이언트 (데이터베이스 전용)
-const supabase = createClient<Database>(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
 
 type ProfileUpdate = Database['public']['Tables']['profiles']['Update'];
 
@@ -17,10 +10,12 @@ type ProfileUpdate = Database['public']['Tables']['profiles']['Update'];
  */
 export async function GET() {
   try {
-    // Clerk로 현재 사용자 확인
-    const { userId } = await auth();
+    const supabase = await createServerClient();
+    
+    // Supabase Auth로 현재 사용자 확인
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    if (!userId) {
+    if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -35,7 +30,7 @@ export async function GET() {
         referrer_l3:referrer_l3_id(id, full_name, referral_code)
       `,
       )
-      .eq('id', userId)
+      .eq('id', user.id)
       .single();
 
     if (profileError) {
@@ -56,12 +51,16 @@ export async function GET() {
  */
 export async function PUT(request: NextRequest) {
   try {
-    // Clerk로 현재 사용자 확인
-    const { userId } = await auth();
+    const supabase = await createServerClient();
+    
+    // Supabase Auth로 현재 사용자 확인
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    if (!userId) {
+    if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const userId = user.id;
 
     // 요청 본문 파싱
     const body = await request.json();
@@ -121,18 +120,22 @@ export async function PUT(request: NextRequest) {
  */
 export async function PATCH(request: NextRequest) {
   try {
-    // Clerk로 현재 사용자 확인
-    const { userId } = await auth();
+    const supabase = await createServerClient();
+    
+    // Supabase Auth로 현재 사용자 확인
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    if (!userId) {
+    if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const userId = user.id;
 
     // 관리자 권한 확인
     const { data: currentProfile, error: profileError } = await supabase
       .from('profiles')
       .select('role')
-      .eq('id', userId)
+      .eq('id', user.id)
       .single();
 
     if (profileError || currentProfile?.role !== 'admin') {

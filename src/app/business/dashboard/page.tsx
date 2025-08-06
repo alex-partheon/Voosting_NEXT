@@ -1,26 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useUser, useClerk } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
+import { createBrowserClient } from '@/lib/supabase/client';
 import type { Database } from '@/types/database.types';
+import type { User } from '@supabase/supabase-js';
 
-// Supabase 클라이언트 (데이터베이스 전용)
-const supabase = createClient<Database>(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-);
-
-interface Profile {
-  id: string;
-  email: string;
-  full_name: string | null;
-  role: string;
-  company_name?: string | null;
-  business_registration_number?: string | null;
-  created_at: string | null;
-}
+type Profile = Database['public']['Tables']['profiles']['Row'];
 
 interface CampaignStats {
   total_campaigns: number;
@@ -32,27 +18,30 @@ interface CampaignStats {
 export default function BusinessDashboard() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [stats, setStats] = useState<CampaignStats | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const router = useRouter();
-  const { user, isLoaded } = useUser();
-  const { signOut } = useClerk();
+  const supabase = createBrowserClient();
 
   useEffect(() => {
     const fetchData = async () => {
-      if (!isLoaded) return;
-
-      if (!user) {
-        router.push('/sign-in');
-        return;
-      }
-
       try {
+        // 현재 사용자 가져오기
+        const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
+
+        if (authError || !currentUser) {
+          router.push('/sign-in');
+          return;
+        }
+
+        setUser(currentUser);
+
         // 프로필 정보 가져오기
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
           .select('*')
-          .eq('id', user.id)
+          .eq('id', currentUser.id)
           .single();
 
         if (profileError) {
@@ -68,35 +57,13 @@ export default function BusinessDashboard() {
 
         setProfile(profileData);
 
-        // 캠페인 통계 가져오기
-        const { data: campaignsData, error: campaignsError } = await supabase
-          .from('campaigns')
-          .select('id, status, budget')
-          .eq('business_id', user.id);
-
-        if (!campaignsError && campaignsData) {
-          const totalCampaigns = campaignsData.length;
-          const activeCampaigns = campaignsData.filter((c) => c.status === 'active').length;
-          const totalSpent = campaignsData.reduce((sum, c) => sum + (c.budget || 0), 0);
-
-          // 지원서 수 가져오기
-          const { data: applicationsData } = await supabase
-            .from('campaign_applications')
-            .select('id')
-            .in(
-              'campaign_id',
-              campaignsData.map((c) => c.id),
-            );
-
-          const totalApplications = applicationsData?.length || 0;
-
-          setStats({
-            total_campaigns: totalCampaigns,
-            active_campaigns: activeCampaigns,
-            total_applications: totalApplications,
-            total_spent: totalSpent,
-          });
-        }
+        // 캠페인 통계 가져오기 (추후 구현)
+        setStats({
+          total_campaigns: 0,
+          active_campaigns: 0,
+          total_applications: 0,
+          total_spent: 0,
+        });
       } catch (err) {
         console.error('Dashboard data fetch error:', err);
         setError('데이터를 불러오는 중 오류가 발생했습니다.');
@@ -106,10 +73,10 @@ export default function BusinessDashboard() {
     };
 
     fetchData();
-  }, [isLoaded, user, router]);
+  }, [router, supabase]);
 
   const handleSignOut = async () => {
-    await signOut();
+    await supabase.auth.signOut();
     router.push('/');
   };
 
@@ -150,7 +117,9 @@ export default function BusinessDashboard() {
               <h1 className="text-xl font-semibold text-gray-900">비즈니스 대시보드</h1>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">안녕하세요, {profile?.full_name}님</span>
+              <span className="text-sm text-gray-600">
+                {profile?.company_name || profile?.full_name || user?.email}
+              </span>
               <button
                 onClick={handleSignOut}
                 className="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
@@ -164,77 +133,38 @@ export default function BusinessDashboard() {
 
       {/* 메인 콘텐츠 */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* 프로필 정보 카드 */}
-        <div className="bg-white rounded-lg shadow p-6 mb-8">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">비즈니스 정보</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">이메일</label>
-              <p className="mt-1 text-sm text-gray-900">{profile?.email}</p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">담당자명</label>
-              <p className="mt-1 text-sm text-gray-900">{profile?.full_name}</p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">회사명</label>
-              <p className="mt-1 text-sm text-gray-900">{profile?.company_name || '미설정'}</p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">사업자등록번호</label>
-              <p className="mt-1 text-sm text-gray-900">
-                {profile?.business_registration_number || '미설정'}
-              </p>
-            </div>
+        {/* 통계 카드 */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          <div className="bg-white rounded-lg shadow p-6">
+            <p className="text-sm text-gray-600 mb-1">전체 캠페인</p>
+            <p className="text-2xl font-bold text-gray-900">{stats?.total_campaigns || 0}</p>
+          </div>
+          <div className="bg-white rounded-lg shadow p-6">
+            <p className="text-sm text-gray-600 mb-1">진행중 캠페인</p>
+            <p className="text-2xl font-bold text-green-600">{stats?.active_campaigns || 0}</p>
+          </div>
+          <div className="bg-white rounded-lg shadow p-6">
+            <p className="text-sm text-gray-600 mb-1">전체 지원자</p>
+            <p className="text-2xl font-bold text-blue-600">{stats?.total_applications || 0}</p>
+          </div>
+          <div className="bg-white rounded-lg shadow p-6">
+            <p className="text-sm text-gray-600 mb-1">총 지출</p>
+            <p className="text-2xl font-bold text-gray-900">
+              ₩{(stats?.total_spent || 0).toLocaleString()}
+            </p>
           </div>
         </div>
 
-        {/* 캠페인 통계 카드 */}
-        {stats && (
-          <div className="bg-white rounded-lg shadow p-6 mb-8">
-            <h2 className="text-lg font-medium text-gray-900 mb-4">캠페인 통계</h2>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="text-center p-4 bg-blue-50 rounded-lg">
-                <p className="text-2xl font-bold text-blue-600">{stats.total_campaigns}</p>
-                <p className="text-sm text-gray-600">총 캠페인 수</p>
-              </div>
-              <div className="text-center p-4 bg-green-50 rounded-lg">
-                <p className="text-2xl font-bold text-green-600">{stats.active_campaigns}</p>
-                <p className="text-sm text-gray-600">진행 중인 캠페인</p>
-              </div>
-              <div className="text-center p-4 bg-purple-50 rounded-lg">
-                <p className="text-2xl font-bold text-purple-600">{stats.total_applications}</p>
-                <p className="text-sm text-gray-600">총 지원서 수</p>
-              </div>
-              <div className="text-center p-4 bg-yellow-50 rounded-lg">
-                <p className="text-2xl font-bold text-yellow-600">
-                  ₩{stats.total_spent.toLocaleString()}
-                </p>
-                <p className="text-sm text-gray-600">총 예산</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* 빠른 액션 */}
+        {/* 캠페인 섹션 */}
         <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">빠른 액션</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <button className="p-4 border border-gray-300 rounded-lg hover:bg-gray-50 text-left">
-              <h3 className="font-medium text-gray-900">새 캠페인 생성</h3>
-              <p className="text-sm text-gray-600 mt-1">새로운 마케팅 캠페인을 시작하세요</p>
-            </button>
-            <button className="p-4 border border-gray-300 rounded-lg hover:bg-gray-50 text-left">
-              <h3 className="font-medium text-gray-900">캠페인 관리</h3>
-              <p className="text-sm text-gray-600 mt-1">진행 중인 캠페인을 관리하세요</p>
-            </button>
-            <button className="p-4 border border-gray-300 rounded-lg hover:bg-gray-50 text-left">
-              <h3 className="font-medium text-gray-900">크리에이터 찾기</h3>
-              <p className="text-sm text-gray-600 mt-1">적합한 크리에이터를 찾아보세요</p>
-            </button>
-            <button className="p-4 border border-gray-300 rounded-lg hover:bg-gray-50 text-left">
-              <h3 className="font-medium text-gray-900">분석 보고서</h3>
-              <p className="text-sm text-gray-600 mt-1">캠페인 성과를 분석하세요</p>
+          <h2 className="text-lg font-medium text-gray-900 mb-4">캠페인 관리</h2>
+          <div className="text-center py-12">
+            <p className="text-gray-500 mb-4">아직 생성된 캠페인이 없습니다.</p>
+            <button
+              onClick={() => router.push('/business/campaigns/create')}
+              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+            >
+              첫 캠페인 만들기
             </button>
           </div>
         </div>

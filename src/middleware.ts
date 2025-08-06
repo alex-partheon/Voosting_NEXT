@@ -1,6 +1,6 @@
-import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import type { NextRequest } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
 import type { Database } from '@/types/database.types';
 import {
   getDomainType,
@@ -9,12 +9,6 @@ import {
   getDefaultRedirectPath,
   getDomainFromHost,
 } from '@/lib/middleware-utils';
-
-// Supabase 클라이언트 (데이터베이스 전용)
-const supabase = createClient<Database>(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
 
 /**
  * 보호된 경로 정의
@@ -72,9 +66,20 @@ const publicRoutes = [
   '/creators',
   '/creators/service',
   '/creators/calculator',
-  '/sign-in(.*)',
-  '/sign-up(.*)',
+  '/sign-in',
+  '/sign-up',
+  '/auth/callback',
+  '/auth/confirm',
 ];
+
+/**
+ * 공개 경로인지 확인하는 함수
+ */
+function isPublicRoute(pathname: string): boolean {
+  return publicRoutes.some((route) => {
+    return pathname === route || pathname.startsWith(`${route}/`);
+  });
+}
 
 /**
  * 경로가 보호된 경로인지 확인
@@ -129,16 +134,42 @@ function getDefaultDashboard(userRole: string): string {
   }
 }
 
-const isPublicRoute = createRouteMatcher(publicRoutes);
-
-export default clerkMiddleware(async (auth, req) => {
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const hostname = req.headers.get('host') || '';
-
+  
   // 정적 파일과 API 경로는 처리하지 않음
   if (pathname.startsWith('/_next') || pathname.includes('.') || pathname.startsWith('/favicon')) {
     return NextResponse.next();
   }
+
+  // Supabase 클라이언트 생성
+  const response = NextResponse.next();
+  const supabase = createServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return req.cookies.get(name)?.value;
+        },
+        set(name: string, value: string, options: any) {
+          response.cookies.set({
+            name,
+            value,
+            ...options,
+          });
+        },
+        remove(name: string, options: any) {
+          response.cookies.set({
+            name,
+            value: '',
+            ...options,
+          });
+        },
+      },
+    }
+  );
 
   try {
     // 도메인 타입 감지
@@ -167,15 +198,16 @@ export default clerkMiddleware(async (auth, req) => {
     }
 
     // 공개 경로 처리
-    if (isPublicRoute(req)) {
+    if (isPublicRoute(url.pathname)) {
       // 이미 로그인한 사용자가 로그인 페이지에 접근하면 대시보드로 리다이렉트
-      const { userId } = await auth();
-      if (userId && (url.pathname === '/sign-in' || url.pathname === '/sign-up')) {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      
+      if (user && (url.pathname === '/sign-in' || url.pathname === '/sign-up')) {
         try {
           const { data: profile } = await supabase
             .from('profiles')
             .select('role')
-            .eq('id', userId)
+            .eq('id', user.id)
             .single();
 
           const userRole = profile?.role || 'creator';
@@ -199,13 +231,14 @@ export default clerkMiddleware(async (auth, req) => {
         return NextResponse.rewrite(url);
       }
 
-      return NextResponse.next();
+      return response;
     }
 
     // 보호된 경로에 대한 인증 확인
     if (isProtectedRoute(url.pathname)) {
-      const { userId } = await auth();
-      if (!userId) {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      
+      if (!user) {
         // 인증되지 않은 사용자는 로그인 페이지로 리다이렉트
         const redirectUrl = new URL('/sign-in', req.url);
         redirectUrl.searchParams.set('redirect_url', rewrittenPath);
@@ -217,7 +250,7 @@ export default clerkMiddleware(async (auth, req) => {
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('role')
-          .eq('id', userId)
+          .eq('id', user.id)
           .single();
 
         if (profileError || !profile) {
@@ -251,18 +284,18 @@ export default clerkMiddleware(async (auth, req) => {
       return NextResponse.rewrite(url);
     }
 
-    return NextResponse.next();
+    return response;
   } catch (error) {
     console.error('Middleware error:', error);
 
     // 오류 발생 시 공개 경로가 아니면 로그인 페이지로 리다이렉트
-    if (!isPublicRoute(req)) {
+    if (!isPublicRoute(pathname)) {
       return NextResponse.redirect(new URL('/sign-in', req.url));
     }
 
-    return NextResponse.next();
+    return response;
   }
-});
+}
 
 /**
  * 미들웨어가 실행될 경로 설정

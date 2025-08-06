@@ -1,13 +1,5 @@
-import { auth } from '@clerk/nextjs/server';
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import type { Database } from '@/types/database.types';
-
-// Supabase 클라이언트 (데이터베이스 전용)
-const supabase = createClient<Database>(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+import { createServerClient } from '@/lib/supabase/server';
 
 /**
  * 추천 코드 검증
@@ -18,6 +10,7 @@ export async function GET(request: NextRequest) {
   const referralCode = searchParams.get('code');
 
   try {
+    const supabase = await createServerClient();
     if (!referralCode) {
       return NextResponse.json({ error: 'Referral code is required' }, { status: 400 });
     }
@@ -80,12 +73,16 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    // Clerk로 현재 사용자 확인
-    const { userId } = await auth();
+    const supabase = await createServerClient();
+    
+    // Supabase Auth로 현재 사용자 확인
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    if (!userId) {
+    if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const userId = user.id;
 
     // 요청 본문 파싱
     const { referralCode } = await request.json();

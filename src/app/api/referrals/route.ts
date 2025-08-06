@@ -1,13 +1,5 @@
-import { auth } from '@clerk/nextjs/server';
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import type { Database } from '@/types/database.types';
-
-// Supabase 클라이언트 (데이터베이스 전용)
-const supabase = createClient<Database>(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+import { createServerClient } from '@/lib/supabase/server';
 
 /**
  * 사용자의 추천 정보 조회
@@ -18,12 +10,16 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get('type'); // 'referred' | 'earnings' | 'stats'
 
   try {
-    // Clerk로 현재 사용자 확인
-    const { userId } = await auth();
+    const supabase = await createServerClient();
+    
+    // Supabase Auth로 현재 사용자 확인
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    if (!userId) {
+    if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const userId = user.id;
 
     switch (type) {
       case 'referred': {
@@ -169,12 +165,16 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    // Clerk로 현재 사용자 확인 (관리자 또는 시스템 권한 필요)
-    const { userId } = await auth();
+    const supabase = await createServerClient();
+    
+    // Supabase Auth로 현재 사용자 확인 (관리자 또는 시스템 권한 필요)
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    if (!userId) {
+    if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const userId = user.id;
 
     // 관리자 권한 확인
     const { data: profile, error: profileError } = await supabase

@@ -20,8 +20,8 @@ This file provides comprehensive guidance to Claude Code (claude.ai/code) when w
 
 ### Current Implementation Status
 
-- **Authentication**: Fully implemented with Clerk (email + OAuth)
-- **Database**: Supabase with RLS policies based on Clerk User ID
+- **Authentication**: Fully migrated to Supabase Auth (email + OAuth)
+- **Database**: Supabase with RLS policies based on Supabase auth.uid()
 - **Multi-domain Routing**: Complete with middleware-based domain detection
 - **Dual-target Public Pages**: Architecture designed (business/creator areas)
 - **Progress**: 15/89 Core MVP tasks completed (16.9%)
@@ -32,10 +32,10 @@ This file provides comprehensive guidance to Claude Code (claude.ai/code) when w
 
 | Component                 | Current Implementation       | Outdated Documentation        | Impact | Required Action                                                   |
 | ------------------------- | ---------------------------- | ----------------------------- | ------ | ----------------------------------------------------------------- |
-| **Authentication**        | Clerk (Email + OAuth)        | README mentions Supabase Auth | HIGH   | Update README.md auth sections                                    |
+| **Authentication**        | Supabase Auth (Email + OAuth) | README mentions Clerk Auth     | HIGH   | Update README.md auth sections                                    |
 | **Brand Name**            | Voosting throughout codebase | Some refs to CashUp           | MEDIUM | Global search/replace needed                                      |
 | **Referral System**       | 10%/5%/2% (3-tier)           | Old docs show 5%/2%/1%        | HIGH   | Update all commission references                                  |
-| **Environment Variables** | Requires CLERK\_\* vars      | Missing in .env.example       | HIGH   | Add CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY, CLERK_WEBHOOK_SECRET |
+| **Environment Variables** | Requires SUPABASE_\* vars    | .env.example needs update     | HIGH   | Add SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY   |
 | **Architecture**          | Dual-target design           | Generic creator platform      | MEDIUM | Update architectural diagrams                                     |
 
 **Validation Command**: `grep -r "CashUp\|supabase.*auth\|5%.*2%.*1%" --exclude-dir=node_modules .`
@@ -45,8 +45,8 @@ This file provides comprehensive guidance to Claude Code (claude.ai/code) when w
 - Next.js 15.4.4 with App Router and React Server Components
 - TypeScript with strict mode
 - Tailwind CSS v4 for styling
-- **Clerk** for authentication and user management (migrated from Supabase Auth)
-- **Supabase** for database, storage, and real-time features (database-only)
+- **Supabase Auth** for authentication and user management
+- **Supabase** for database, storage, and real-time features
 - Testing: Jest for unit tests, Playwright for E2E tests
 - External APIs: Google Gemini AI, Toss Payments, Toss 1-won verification
 
@@ -56,38 +56,38 @@ This file provides comprehensive guidance to Claude Code (claude.ai/code) when w
 
 ```bash
 # Start development server with Turbopack
-npm run dev
+pnpm dev
 
 # Build for production
-npm run build
+pnpm build
 
 # Start production server
-npm start
+pnpm start
 
 # Run linting
-npm run lint
+pnpm lint
 
 # Type checking
-npm run type-check
+pnpm type-check
 ```
 
 ### Testing Commands
 
 ```bash
 # Run unit tests (Jest)
-npm run test
+pnpm test
 
 # Run tests in watch mode
-npm run test:watch
+pnpm test:watch
 
 # Run test coverage report
-npm run test:coverage
+pnpm test:coverage
 
 # Run E2E tests (Playwright)
-npm run test:e2e
+pnpm test:e2e
 
 # Run specific test file
-npm run test src/lib/__tests__/middleware-utils.test.ts
+pnpm test src/lib/__tests__/middleware-utils.test.ts
 
 # Run Playwright tests with UI (useful for debugging)
 npx playwright test --ui
@@ -99,20 +99,20 @@ npx playwright test --project=chromium
 ### Database & Backend
 
 ```bash
-# Start local Supabase (database, storage, realtime only)
-npm run supabase:start
+# Start local Supabase
+pnpm supabase:start
 
 # Stop local Supabase
-npm run supabase:stop
+pnpm supabase:stop
 
 # Reset database with fresh schema and seed data
-npm run supabase:reset
+pnpm supabase:reset
 
 # Run database migrations
-npm run supabase:migrate
+pnpm supabase:migrate
 
 # Generate TypeScript types from database
-npm run supabase:types
+pnpm supabase:types
 
 # Create new migration
 npx supabase migration new <migration_name>
@@ -293,25 +293,25 @@ time curl -H "Host: creator.localhost:3002" http://localhost:3002/dashboard
 | **Admin**    | http://admin.localhost:3002    | Admin dashboard           | ✅ (admin role)         |
 | **Supabase** | http://localhost:54323         | Database management       | ❌                      |
 
-### Authentication Architecture (Clerk + Supabase)
+### Authentication Architecture (Supabase Auth)
 
-**Current Implementation**: Hybrid authentication system using **Clerk** for auth and **Supabase** for database.
+**Current Implementation**: Full Supabase Auth implementation for authentication and database integration.
 
 #### 5-Step Authentication Flow
 
 ```mermaid
 sequenceDiagram
     participant User
-    participant Clerk
+    participant Supabase Auth
     participant Middleware
-    participant Supabase
+    participant Supabase DB
     participant Dashboard
 
-    User->>Clerk: 1. Sign in/up (email + OAuth)
-    Clerk->>Supabase: 2. Webhook creates/updates profile
+    User->>Supabase Auth: 1. Sign in/up (email + OAuth)
+    Supabase Auth->>Supabase DB: 2. Trigger creates/updates profile
     User->>Middleware: 3. Request protected route
-    Middleware->>Clerk: 4. Validate session
-    Middleware->>Supabase: 5. Get user role
+    Middleware->>Supabase Auth: 4. Validate session
+    Middleware->>Supabase DB: 5. Get user role
     Middleware->>Dashboard: 6. Route to role-specific dashboard
 ```
 
@@ -319,33 +319,40 @@ sequenceDiagram
 
 **Step 1-2: User Registration & Profile Sync**
 
-```typescript
-// src/app/api/webhooks/clerk/route.ts
-export async function POST(req: Request) {
-  const evt: WebhookEvent = wh.verify(payload, headers);
-
-  if (evt.type === 'user.created') {
-    await supabase.from('profiles').insert({
-      id: evt.data.id, // Clerk User ID
-      email: evt.data.email_addresses[0]?.email_address,
-      role: 'creator', // Default role
-      referral_code: generateReferralCode(evt.data.id),
-    });
-  }
-}
+```sql
+-- Database trigger for profile creation
+CREATE OR REPLACE FUNCTION handle_new_user() 
+RETURNS trigger AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email, role, referral_code)
+  VALUES (
+    new.id,
+    new.email,
+    'creator', -- Default role
+    generate_referral_code(new.id)
+  );
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 ```
 
 **Step 3-4: Middleware Authentication Check**
 
 ```typescript
 // src/middleware.ts
-export default clerkMiddleware(async (auth, req) => {
-  const { userId } = await auth(); // Clerk session validation
-
-  if (isProtectedRoute(pathname) && !userId) {
+export async function middleware(req: NextRequest) {
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: {...} }
+  );
+  
+  const { data: { user } } = await supabase.auth.getUser();
+  
+  if (isProtectedRoute(pathname) && !user) {
     return NextResponse.redirect('/sign-in');
   }
-});
+}
 ```
 
 **Step 5-6: Role-Based Routing**
@@ -355,7 +362,7 @@ export default clerkMiddleware(async (auth, req) => {
 const { data: profile } = await supabase
   .from('profiles')
   .select('role')
-  .eq('id', userId) // Clerk User ID
+  .eq('id', user.id) // Supabase auth.uid()
   .single();
 
 if (!isDomainRoleMatch(domainType, profile.role)) {
@@ -368,10 +375,11 @@ if (!isDomainRoleMatch(domainType, profile.role)) {
 | File                                      | Purpose           | Key Functions                                        |
 | ----------------------------------------- | ----------------- | ---------------------------------------------------- |
 | `src/lib/clerk.ts`                        | Auth utilities    | `getCurrentUser()`, `requireAuth()`, `requireRole()` |
-| `src/app/api/webhooks/clerk/route.ts`     | User sync webhook | `POST()` handler for user.created/updated/deleted    |
-| `src/middleware.ts`                       | Auth + routing    | `clerkMiddleware()`, role verification               |
-| `src/app/sign-in/[[...sign-in]]/page.tsx` | Sign-in UI        | Clerk `<SignIn />` component                         |
-| `src/app/sign-up/[[...sign-up]]/page.tsx` | Sign-up UI        | Clerk `<SignUp />` component                         |
+| `src/lib/supabase/server.ts`              | Server client     | `createServerClient()`, `createAdminClient()`         |
+| `src/lib/supabase/client.ts`              | Browser client    | `createBrowserClient()`                              |
+| `src/middleware.ts`                       | Auth + routing    | Authentication check, role verification               |
+| `src/app/sign-in/[[...sign-in]]/page.tsx` | Sign-in UI        | Supabase Auth UI component                           |
+| `src/app/sign-up/[[...sign-up]]/page.tsx` | Sign-up UI        | Supabase Auth UI component                           |
 
 #### Authentication Validation
 
@@ -380,19 +388,16 @@ if (!isDomainRoleMatch(domainType, profile.role)) {
 curl -H "Host: creator.localhost:3002" http://localhost:3002/dashboard
 # Should redirect to /sign-in if not authenticated
 
-# Test webhook endpoint
-curl -X POST http://localhost:3002/api/webhooks/clerk \
-  -H "Content-Type: application/json" \
-  -H "svix-id: test" \
-  -H "svix-timestamp: $(date +%s)" \
-  -H "svix-signature: test"
+# Test auth status
+curl http://localhost:3002/api/auth/callback \
+  -H "Content-Type: application/json"
 ```
 
 ### Database Integration
 
-- **Clerk User ID** as primary key (from Clerk) linking to Supabase profiles table
-- **Supabase** used for database, storage, and real-time features only
-- **Row Level Security (RLS)** policies based on Clerk user ID
+- **Supabase auth.uid()** as primary key linking to profiles table
+- **Supabase** used for authentication, database, storage, and real-time features
+- **Row Level Security (RLS)** policies based on auth.uid()
 - **Real-time subscriptions** for live campaign updates and notifications
 
 ### Key Features & Architecture
@@ -419,7 +424,7 @@ flowchart TD
 ```sql
 -- profiles table structure
 CREATE TABLE profiles (
-  id UUID PRIMARY KEY, -- Clerk User ID
+  id UUID PRIMARY KEY REFERENCES auth.users(id), -- Supabase auth.uid()
   email VARCHAR NOT NULL,
   referral_code VARCHAR(10) UNIQUE NOT NULL,
   referrer_l1_id UUID REFERENCES profiles(id), -- Direct referrer (10%)
@@ -647,15 +652,15 @@ CLERK_SECRET_KEY=sk_live_...
 ### Local Development URLs
 
 - **Main App**: http://localhost:3002
-- **Supabase Studio**: http://localhost:54323 (after `npm run supabase:start`)
+- **Supabase Studio**: http://localhost:54323 (after `pnpm supabase:start`)
 - **Creator Dashboard**: http://creator.localhost:3002
 - **Business Dashboard**: http://business.localhost:3002
 - **Admin Dashboard**: http://admin.localhost:3002
 
 ### Integration Patterns
 
-- **Clerk Auth** 구현 완료 (이메일 + OAuth providers)
-- **Real-time features** should use Supabase Realtime with Clerk user ID authentication
+- **Supabase Auth** 구현 완료 (이메일 + OAuth providers)
+- **Real-time features** should use Supabase Realtime with auth.uid() authentication
 - **File uploads** go through Supabase Storage with appropriate RLS policies
 - **External API calls** should be handled in Edge Functions or API routes, not client-side
 - **Korean language support** is primary, with all user-facing content in Korean
@@ -687,8 +692,8 @@ The project uses 4 MCP servers for enhanced development capabilities:
 ### Database Conventions
 
 - All tables use `created_at` and `updated_at` timestamps
-- User references use Clerk user ID from Clerk authentication
-- RLS policies must be created for all tables using Clerk user ID
+- User references use Supabase auth.uid() as foreign key
+- RLS policies must be created for all tables using auth.uid()
 - Use SQL triggers for complex business logic (e.g., referral calculations)
 
 ### API Response Format
@@ -729,18 +734,18 @@ Example: `feat: add user profile API endpoint`
 
 - **현재 단계**: Phase 1 (기반 구축) - Week 1-2 진행중
 - **완료된 작업**: 15/89 Core MVP 태스크 (16.9%)
-- **최근 완료**: 듀얼 타겟 공개 페이지 시스템, Clerk 기반 인증 페이지 완성, README.md 브랜드 업데이트
-- **다음 작업**: TASK-010 (사용자 프로필 및 역할 시스템 설정)
+- **최근 완료**: Clerk → Supabase Auth 마이그레이션 완료, npm → pnpm 마이그레이션 완료, shadcn/ui 전체 컴포넌트 설치
+- **다음 작업**: 프로젝트 안정화 및 테스트
 
 ### ✅ 완료된 주요 기능
 
 | Category        | Feature                      | Implementation Status | Test Coverage | Files                                   |
 | --------------- | ---------------------------- | --------------------- | ------------- | --------------------------------------- |
 | **인프라**      | Next.js 15.4.4 + TypeScript  | 🟢 Complete           | 100%          | `next.config.js`, `tsconfig.json`       |
-| **인증 시스템** | Clerk 인증 + Supabase DB     | 🟢 Complete           | 100%          | `src/lib/clerk.ts`, `src/middleware.ts` |
+| **인증 시스템** | Supabase Auth + DB           | 🟢 Complete           | 100%          | `src/lib/supabase/`, `src/middleware.ts` |
 | **멀티도메인**  | 도메인별 라우팅              | 🟢 Complete           | 100%          | `src/lib/middleware-utils.ts`           |
 | **공개 페이지** | 듀얼 타겟 공개 페이지 시스템 | 🟢 Complete           | 95%           | `src/app/(main)/`, `src/components/`    |
-| **인증 페이지** | Clerk 기반 로그인/회원가입   | 🟢 Complete           | 90%           | `src/app/sign-in/`, `src/app/sign-up/`  |
+| **인증 페이지** | Supabase Auth 로그인/회원가입 | 🟢 Complete           | 90%           | `src/app/sign-in/`, `src/app/sign-up/`  |
 | **테스트 환경** | Jest + Playwright E2E        | 🟢 Complete           | 100%          | `src/__tests__/`, `test/`               |
 | **브랜딩**      | CashUp → Voosting 전환       | 🟢 Complete           | 100%          | README.md, CLAUDE.md updated            |
 | **UI 시스템**   | Tailwind CSS v4 + Shadcn/ui  | 🟢 Complete           | 80%           | `src/components/ui/`                    |
@@ -753,17 +758,19 @@ Example: `feat: add user profile API endpoint`
 - 🎯 도메인별 역할 기반 접근 제어
 - 📱 크로스 브라우저 E2E 테스트 (Chrome, Firefox, Safari)
 - 🎨 듀얼 타겟 UI 시스템 (비즈니스/크리에이터 테마)
-- 🔐 Clerk 기반 역할별 회원가입 플로우
+- 🔐 Supabase Auth 기반 역할별 회원가입 플로우
+- 📦 pnpm 패키지 매니저로 전체 마이그레이션
+- 🎨 shadcn/ui 전체 컴포넌트 및 블록 설치 완료
 
 ### Key Development Patterns
 
 ```typescript
 // File structure patterns to follow:
-// components/ui/ - Base UI components (Shadcn/ui)
-// components/forms/ - Form-specific components
+// components/ui/ - Base UI components (shadcn/ui)
+// components/forms/ - Form-specific components  
 // components/blocks/ - Page builder block components
-// lib/clerk/ - Clerk authentication utilities
-// lib/supabase/ - Database client and utilities (database-only)
+// lib/supabase/ - Supabase client and utilities
+// lib/clerk.ts - Authentication utilities (using Supabase)
 // hooks/use-* - Custom React hooks
 // stores/use-*-store - Zustand state management
 ```
@@ -788,7 +795,7 @@ Example: `feat: add user profile API endpoint`
 #### 새로 추가된 테스트
 
 - **공개 페이지 테스트**: 비즈니스/크리에이터 타겟 페이지 검증
-- **인증 플로우 테스트**: Clerk 기반 회원가입/로그인 검증
+- **인증 플로우 테스트**: Supabase Auth 기반 회원가입/로그인 검증
 - **수익 계산기 테스트**: 3단계 추천 시스템 로직 검증
 
 ### 📱 현재 구현된 페이지
@@ -801,7 +808,7 @@ Example: `feat: add user profile API endpoint`
 - **크리에이터 서비스**: `/creators/service` - 크리에이터 전용 서비스 소개
 - **수익 계산기**: `/creators/calculator` - 인터랙티브 수익 계산 도구
 
-#### 인증 페이지 (Clerk 기반)
+#### 인증 페이지 (Supabase Auth 기반)
 
 - **통합 로그인**: `/sign-in` - 이메일 + OAuth 지원
 - **역할 선택**: `/sign-up` - 크리에이터/비즈니스 선택 페이지
@@ -828,29 +835,28 @@ Example: `feat: add user profile API endpoint`
 
 ### Common Setup Issues
 
-#### 🔴 Clerk Authentication Errors
+#### 🔴 Supabase Authentication Errors
 
-**Problem**: `ClerkAPIError: Invalid publishable key`
+**Problem**: `Auth session missing`
 
 ```bash
 # Symptoms
-Error: ClerkAPIError: Invalid publishable key
-  at clerkClient.users.getUser()
+Error: Auth session missing
+  at supabase.auth.getUser()
 ```
 
 **Solution**:
 
 ```bash
 # 1. Verify environment variables
-echo $NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
-echo $CLERK_SECRET_KEY
+echo $NEXT_PUBLIC_SUPABASE_URL
+echo $NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-# 2. Check Clerk Dashboard API Keys
-# Go to: https://dashboard.clerk.dev/apps/[your-app]/api-keys
+# 2. Check Supabase Dashboard Settings
+# Go to: https://supabase.com/dashboard/project/[your-project]/settings/api
 
-# 3. Ensure correct environment (development vs production)
-# Development keys start with: pk_test_, sk_test_
-# Production keys start with: pk_live_, sk_live_
+# 3. Ensure Supabase is running locally
+pnpm supabase:start
 ```
 
 #### 🔴 Multi-Domain Routing Issues
@@ -894,43 +900,44 @@ ERROR: new row violates row-level security policy for table "profiles"
 SELECT schemaname, tablename, policyname, cmd, qual
 FROM pg_policies WHERE tablename = 'profiles';
 
--- 2. Create missing RLS policy for Clerk User ID
+-- 2. Create missing RLS policy for Supabase auth.uid()
 CREATE POLICY "Users can access own profile" ON profiles
-  FOR ALL USING (auth.uid()::text = id);
+  FOR ALL USING (auth.uid() = id);
 
 -- 3. Enable RLS if not enabled
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ```
 
-#### 🔴 Webhook Verification Failures
+#### 🔴 Database Trigger Issues
 
-**Problem**: Clerk webhook returns 400 Bad Request
+**Problem**: Profile not created after signup
 
 ```bash
 # Symptoms
-POST /api/webhooks/clerk 400 Bad Request
-Error: Error occured -- no svix headers
+SELECT * FROM profiles WHERE id = 'user-id';
+-- Returns 0 rows
 ```
 
 **Solution**:
 
 ```bash
-# 1. Check webhook endpoint URL in Clerk Dashboard
-# Should be: https://your-domain.com/api/webhooks/clerk
+# 1. Check if auth trigger exists
+SELECT proname FROM pg_proc WHERE proname = 'handle_new_user';
 
-# 2. Verify webhook secret
-echo $CLERK_WEBHOOK_SECRET
+# 2. Recreate trigger if missing
+CREATE OR REPLACE FUNCTION handle_new_user() 
+RETURNS trigger AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email, role, referral_code)
+  VALUES (new.id, new.email, 'creator', generate_referral_code(new.id));
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
-# 3. Test webhook locally with ngrok
-npx ngrok http 3002
-# Use ngrok URL in Clerk webhook settings
-
-# 4. Check webhook headers in request
-curl -X POST http://localhost:3002/api/webhooks/clerk \
-  -H "svix-id: test" \
-  -H "svix-timestamp: $(date +%s)" \
-  -H "svix-signature: test" \
-  -d '{}'
+# 3. Create trigger on auth.users
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION handle_new_user();
 ```
 
 ### Performance Monitoring
@@ -966,7 +973,7 @@ EXPLAIN ANALYZE SELECT * FROM profiles WHERE id = 'user_123';
 
 ```bash
 # Run tests with coverage
-npm run test:coverage
+pnpm test:coverage
 
 # Target coverage thresholds:
 # - Statements: 80%+
@@ -979,7 +986,7 @@ npm run test:coverage
 
 ```bash
 # Run E2E tests across all domains
-npm run test:e2e
+pnpm test:e2e
 
 # Test specific domain
 npx playwright test --grep "creator dashboard"
@@ -992,33 +999,33 @@ npx playwright test --update-snapshots
 
 ## Architecture Decision Records (ADRs)
 
-### ADR-001: Clerk + Supabase Architecture
+### ADR-001: Supabase Auth Architecture
 
 **Status**: ✅ Implemented  
-**Date**: 2024-01-15  
-**Decision**: Use Clerk for authentication and Supabase for database-only
+**Date**: 2024-08-06  
+**Decision**: Use Supabase for both authentication and database
 
-**Context**: Need authentication system that scales with user growth while maintaining cost efficiency.
+**Context**: Need unified authentication and database system that simplifies the architecture.
 
 **Rationale**:
 
-- **Clerk Advantages**: Better OAuth support, user management UI, webhook reliability
-- **Supabase Advantages**: PostgreSQL features, RLS policies, real-time subscriptions
-- **Cost Efficiency**: Avoid double-billing for auth + database services
-- **Technical Simplicity**: Single user ID (Clerk) across all services
+- **Unified System**: Single service for auth and database reduces complexity
+- **RLS Integration**: Native RLS policies work seamlessly with auth.uid()
+- **Cost Efficiency**: Single billing for auth + database services
+- **Real-time Features**: Built-in real-time subscriptions with auth
 
 **Implementation**:
 
 ```typescript
-// User ID flow: Clerk User ID → Supabase profiles.id → RLS policies
-const userId = await auth(); // Clerk session
-const profile = await supabase.from('profiles').select().eq('id', userId);
+// User ID flow: Supabase auth.uid() → profiles.id → RLS policies
+const { data: { user } } = await supabase.auth.getUser();
+const profile = await supabase.from('profiles').select().eq('id', user.id);
 ```
 
 **Trade-offs**:
 
-- ✅ **Pros**: Excellent developer experience, scalable, feature-rich
-- ❌ **Cons**: Vendor lock-in to Clerk, webhook dependency
+- ✅ **Pros**: Simplified architecture, native RLS, cost-effective
+- ❌ **Cons**: Less OAuth provider options compared to dedicated auth services
 
 ### ADR-002: Multi-Domain Architecture
 
@@ -1072,12 +1079,12 @@ ls -la src/middleware.ts
 
 ```bash
 # Check environment variables
-npm run dev 2>&1 | grep -E "(missing|undefined|error)" | wc -l
+pnpm dev 2>&1 | grep -E "(missing|undefined|error)" | wc -l
 # Expected output: 0 (no missing environment variables)
 
 # Test authentication
-curl http://localhost:3002/api/auth/me
-# Expected: Proper Clerk auth response or redirect
+curl http://localhost:3002/api/profile
+# Expected: 401 if not authenticated, profile data if authenticated
 ```
 
 **Step 3: Multi-Domain Testing**
