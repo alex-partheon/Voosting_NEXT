@@ -1,16 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useUser, useClerk } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
+import { createBrowserClient } from '@/lib/supabase/client';
 import type { Database } from '@/types/database.types';
-
-// Supabase 클라이언트 (데이터베이스 전용)
-const supabase = createClient<Database>(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-);
+import type { User } from '@supabase/supabase-js';
 
 interface Profile {
   id: string;
@@ -30,27 +24,29 @@ interface ReferralStats {
 export default function CreatorDashboard() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [stats, setStats] = useState<ReferralStats | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const router = useRouter();
-  const { user, isLoaded } = useUser();
-  const { signOut } = useClerk();
+  const supabase = createBrowserClient();
 
   useEffect(() => {
     const fetchData = async () => {
-      if (!isLoaded) return;
-
-      if (!user) {
-        router.push('/sign-in');
-        return;
-      }
-
       try {
+        // 현재 사용자 가져오기
+        const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
+
+        if (authError || !currentUser) {
+          router.push('/sign-in');
+          return;
+        }
+
+        setUser(currentUser);
         // 프로필 정보 가져오기
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
           .select('*')
-          .eq('id', user.id)
+          .eq('id', currentUser.id)
           .single();
 
         if (profileError) {
@@ -70,7 +66,7 @@ export default function CreatorDashboard() {
         const { data: statsData, error: statsError } = await supabase
           .from('user_referral_stats')
           .select('*')
-          .eq('user_id', user.id)
+          .eq('user_id', currentUser.id)
           .single();
 
         if (!statsError && statsData) {
@@ -85,10 +81,10 @@ export default function CreatorDashboard() {
     };
 
     fetchData();
-  }, [isLoaded, user, router]);
+  }, [router, supabase]);
 
   const handleSignOut = async () => {
-    await signOut();
+    await supabase.auth.signOut();
     router.push('/');
   };
 

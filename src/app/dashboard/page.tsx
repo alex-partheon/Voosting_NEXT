@@ -1,48 +1,39 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useUser, useClerk } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
+import { createBrowserClient } from '@/lib/supabase/client';
 import type { Database } from '@/types/database.types';
+import type { User } from '@supabase/supabase-js';
 
-// Supabase 클라이언트 (데이터베이스 전용)
-const supabase = createClient<Database>(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-);
-
-interface Profile {
-  id: string;
-  email: string;
-  full_name: string | null;
-  role: string;
-  created_at: string | null;
-}
+type Profile = Database['public']['Tables']['profiles']['Row'];
 
 export default function Dashboard() {
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const router = useRouter();
-  const { user, isLoaded } = useUser();
-  const { signOut } = useClerk();
+  const supabase = createBrowserClient();
 
   useEffect(() => {
     const fetchData = async () => {
-      if (!isLoaded) return;
-
-      if (!user) {
-        router.push('/sign-in');
-        return;
-      }
-
       try {
+        // 현재 사용자 가져오기
+        const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
+
+        if (authError || !currentUser) {
+          router.push('/sign-in');
+          return;
+        }
+
+        setUser(currentUser);
+
         // 프로필 정보 가져오기
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
           .select('*')
-          .eq('id', user.id)
+          .eq('id', currentUser.id)
           .single();
 
         if (profileError) {
@@ -72,10 +63,10 @@ export default function Dashboard() {
     };
 
     fetchData();
-  }, [isLoaded, user, router]);
+  }, [router, supabase]);
 
   const handleSignOut = async () => {
-    await signOut();
+    await supabase.auth.signOut();
     router.push('/');
   };
 
@@ -139,7 +130,7 @@ export default function Dashboard() {
         <div className="max-w-md w-full bg-white rounded-lg shadow p-8">
           <div className="text-center mb-8">
             <h1 className="text-2xl font-bold text-gray-900 mb-2">역할 선택</h1>
-            <p className="text-gray-600">CashUp에서 어떤 역할로 활동하시겠습니까?</p>
+            <p className="text-gray-600">Voosting에서 어떤 역할로 활동하시겠습니까?</p>
           </div>
 
           <div className="space-y-4">
@@ -185,7 +176,7 @@ export default function Dashboard() {
               <h1 className="text-xl font-semibold text-gray-900">대시보드</h1>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">안녕하세요, {profile?.full_name}님</span>
+              <span className="text-sm text-gray-600">안녕하세요, {profile?.full_name || user?.email}님</span>
               <button
                 onClick={handleSignOut}
                 className="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
@@ -202,7 +193,7 @@ export default function Dashboard() {
         <div className="bg-white rounded-lg shadow p-6">
           <h2 className="text-lg font-medium text-gray-900 mb-4">환영합니다!</h2>
           <p className="text-gray-600 mb-4">
-            CashUp에 오신 것을 환영합니다. 아래 링크를 통해 원하는 기능을 이용해보세요.
+            Voosting에 오신 것을 환영합니다. 아래 링크를 통해 원하는 기능을 이용해보세요.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -1,13 +1,6 @@
-import { auth, currentUser } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
+import { createServerClient } from '@/lib/supabase/server';
 import type { Database } from '@/types/database.types';
-
-// Supabase 클라이언트 (데이터베이스 전용)
-const supabase = createClient<Database>(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
 
 type UserRole = Database['public']['Enums']['user_role'];
 type Profile = Database['public']['Tables']['profiles']['Row'];
@@ -16,7 +9,13 @@ type Profile = Database['public']['Tables']['profiles']['Row'];
  * 현재 인증된 사용자 정보 가져오기
  */
 export async function getCurrentUser() {
-  const user = await currentUser();
+  const supabase = await createServerClient();
+  const { data: { user }, error } = await supabase.auth.getUser();
+  
+  if (error || !user) {
+    return null;
+  }
+  
   return user;
 }
 
@@ -24,9 +23,10 @@ export async function getCurrentUser() {
  * 현재 사용자의 프로필 정보 가져오기 (Supabase에서)
  */
 export async function getCurrentProfile(): Promise<Profile | null> {
-  const user = await currentUser();
+  const supabase = await createServerClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-  if (!user) {
+  if (authError || !user) {
     return null;
   }
 
@@ -50,105 +50,91 @@ export async function getCurrentProfile(): Promise<Profile | null> {
 }
 
 /**
- * 인증이 필요한 페이지에서 사용하는 함수
+ * 인증 필요 - 로그인하지 않은 경우 로그인 페이지로 리다이렉트
  */
-export async function requireAuth(redirectTo?: string) {
-  const { userId } = await auth();
+export async function requireAuth() {
+  const user = await getCurrentUser();
 
-  if (!userId) {
-    const redirectUrl = redirectTo ? `?redirect_url=${encodeURIComponent(redirectTo)}` : '';
-    redirect(`/sign-in${redirectUrl}`);
+  if (!user) {
+    redirect('/sign-in');
   }
 
-  return userId;
+  return user;
 }
 
 /**
- * 특정 역할이 필요한 페이지에서 사용하는 함수
+ * 특정 역할 필요 - 권한이 없는 경우 접근 거부
  */
-export async function requireRole(requiredRole: UserRole | UserRole[], redirectTo?: string) {
+export async function requireRole(requiredRoles: UserRole[]) {
+  const user = await requireAuth();
   const profile = await getCurrentProfile();
 
   if (!profile) {
-    const redirectUrl = redirectTo ? `?redirect_url=${encodeURIComponent(redirectTo)}` : '';
-    redirect(`/sign-in${redirectUrl}`);
+    redirect('/sign-in');
   }
 
-  const allowedRoles = Array.isArray(requiredRole) ? requiredRole : [requiredRole];
-
-  if (!allowedRoles.includes(profile.role)) {
+  if (!requiredRoles.includes(profile.role)) {
     redirect('/unauthorized');
   }
 
-  return profile;
+  return { user, profile };
 }
 
 /**
- * 사용자 프로필 생성 또는 업데이트
+ * 크리에이터 역할 필요
  */
-export async function upsertUserProfile(
-  userId: string,
-  userData: {
-    email: string;
-    fullName?: string;
-    role?: UserRole;
-    referralCode?: string;
-  },
-): Promise<Profile | null> {
-  try {
-    // 추천 코드가 있다면 추천 관계 설정
-    let referralData = {};
-    if (userData.referralCode) {
-      const referralResult = await setReferralRelationship(userId, userData.referralCode);
-      if (referralResult.success) {
-        referralData = referralResult.data || {};
-      }
-    }
+export async function requireCreator() {
+  return requireRole(['creator']);
+}
 
-    const { data: profile, error } = await supabase
-      .from('profiles')
-      .upsert({
-        id: userId,
-        email: userData.email,
-        full_name: userData.fullName || null,
-        role: userData.role || 'creator',
-        referral_code: generateReferralCode(userId),
-        ...referralData,
-        updated_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
+/**
+ * 비즈니스 역할 필요
+ */
+export async function requireBusiness() {
+  return requireRole(['business']);
+}
 
-    if (error) {
-      console.error('Error upserting profile:', error);
-      return null;
-    }
+/**
+ * 관리자 역할 필요
+ */
+export async function requireAdmin() {
+  return requireRole(['admin']);
+}
 
-    return profile;
-  } catch (error) {
-    console.error('Error upserting user profile:', error);
+/**
+ * 추천 코드로 추천인 정보 가져오기
+ */
+export async function getReferrerByCode(referralCode: string) {
+  const supabase = await createServerClient();
+  
+  const { data: referrer, error } = await supabase
+    .from('profiles')
+    .select('id, full_name, email')
+    .eq('referral_code', referralCode)
+    .single();
+
+  if (error || !referrer) {
     return null;
   }
+
+  return referrer;
 }
 
 /**
- * 추천 코드 생성 함수
- */
-export function generateReferralCode(userId: string): string {
-  const userPart = userId.slice(-6).toUpperCase();
-  const randomPart = Math.random().toString(36).substring(2, 6).toUpperCase();
-  return `${userPart}${randomPart}`;
-}
-
-/**
- * 추천 관계 설정 함수
+ * 추천 관계 설정
  */
 export async function setReferralRelationship(
   newUserId: string,
   referralCode: string,
-): Promise<{ success: boolean; error?: string; data?: Record<string, unknown> }> {
+): Promise<{
+  success: boolean;
+  error?: string;
+  data?: Record<string, unknown>;
+}> {
+  const supabase = await createServerClient();
+
   try {
-    // 추천 코드로 추천인 찾기
+    // 추천인 찾기
     const { data: referrer, error: referrerError } = await supabase
       .from('profiles')
       .select('id, referrer_l1_id, referrer_l2_id')
@@ -156,51 +142,78 @@ export async function setReferralRelationship(
       .single();
 
     if (referrerError || !referrer) {
-      return { success: false, error: 'Invalid referral code' };
+      return {
+        success: false,
+        error: '유효하지 않은 추천 코드입니다.',
+      };
     }
 
-    // 3단계 추천 관계 설정
-    const updateData: {
-      referrer_l1_id: string;
-      referrer_l2_id?: string | null;
-      referrer_l3_id?: string | null;
-    } = {
+    // 자기 자신을 추천할 수 없음
+    if (referrer.id === newUserId) {
+      return {
+        success: false,
+        error: '자기 자신을 추천할 수 없습니다.',
+      };
+    }
+
+    // 3단계 추천 체인 구성
+    const updateData = {
       referrer_l1_id: referrer.id,
+      referrer_l2_id: referrer.referrer_l1_id,
+      referrer_l3_id: referrer.referrer_l2_id,
     };
 
-    // 2단계 추천인이 있다면 설정
-    if (referrer.referrer_l1_id) {
-      updateData.referrer_l2_id = referrer.referrer_l1_id;
+    // 프로필 업데이트
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update(updateData)
+      .eq('id', newUserId);
+
+    if (updateError) {
+      console.error('Error updating referral relationship:', updateError);
+      return {
+        success: false,
+        error: '추천 관계 설정 중 오류가 발생했습니다.',
+      };
     }
 
-    // 3단계 추천인이 있다면 설정
-    if (referrer.referrer_l2_id) {
-      updateData.referrer_l3_id = referrer.referrer_l2_id;
-    }
-
-    return { success: true, data: updateData };
+    return {
+      success: true,
+      data: updateData,
+    };
   } catch (error) {
-    console.error('Error setting referral relationship:', error);
-    return { success: false, error: 'An unexpected error occurred' };
+    console.error('Error in setReferralRelationship:', error);
+    return {
+      success: false,
+      error: '추천 관계 설정 중 오류가 발생했습니다.',
+    };
   }
 }
 
 /**
- * 사용자 역할 확인 함수들
+ * 추천 코드 생성 (사용자 ID 기반)
  */
-export function hasRole(userRole: UserRole, requiredRole: UserRole | UserRole[]): boolean {
-  const allowedRoles = Array.isArray(requiredRole) ? requiredRole : [requiredRole];
-  return allowedRoles.includes(userRole);
+export function generateReferralCode(userId: string): string {
+  // 사용자 ID의 앞 8자리를 사용하여 추천 코드 생성
+  const cleanId = userId.replace(/-/g, '').toUpperCase();
+  return `VT${cleanId.substring(0, 6)}`;
 }
 
-export function isAdmin(userRole: UserRole): boolean {
-  return userRole === 'admin';
-}
+/**
+ * 사용자 역할 업데이트
+ */
+export async function updateUserRole(userId: string, role: UserRole) {
+  const supabase = await createServerClient();
 
-export function isCreator(userRole: UserRole): boolean {
-  return userRole === 'creator';
-}
+  const { error } = await supabase
+    .from('profiles')
+    .update({ role, updated_at: new Date().toISOString() })
+    .eq('id', userId);
 
-export function isBusiness(userRole: UserRole): boolean {
-  return userRole === 'business';
+  if (error) {
+    console.error('Error updating user role:', error);
+    return { success: false, error: error.message };
+  }
+
+  return { success: true };
 }

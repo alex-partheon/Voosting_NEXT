@@ -1,8 +1,68 @@
-import { SignIn } from '@clerk/nextjs';
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Sparkles, Building2, UserCircle } from 'lucide-react';
+import { ArrowLeft, Sparkles, Building2, UserCircle, Loader2 } from 'lucide-react';
+import { createBrowserClient } from '@/lib/supabase/client';
 
 export default function SignInPage() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const router = useRouter();
+  const supabase = createBrowserClient();
+
+  const handleSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        setError(error.message);
+        return;
+      }
+
+      if (data.user) {
+        // 로그인 성공 - 대시보드로 리다이렉트
+        router.push('/dashboard');
+      }
+    } catch (err) {
+      setError('로그인 중 오류가 발생했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOAuthSignIn = async (provider: 'google' | 'github') => {
+    setLoading(true);
+    setError('');
+
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+
+      if (error) {
+        setError(error.message);
+      }
+    } catch (err) {
+      setError('OAuth 로그인 중 오류가 발생했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden">
       {/* Background decoration */}
@@ -45,35 +105,82 @@ export default function SignInPage() {
             </div>
           </div>
 
-          {/* Clerk SignIn */}
-          <div className="bg-white rounded-2xl shadow-xl p-1">
-            <SignIn
-              path="/sign-in"
-              routing="path"
-              signUpUrl="/sign-up"
-              redirectUrl="/dashboard"
-              appearance={{
-                elements: {
-                  rootBox: 'w-full',
-                  card: 'shadow-none bg-transparent',
-                  headerTitle: 'hidden',
-                  headerSubtitle: 'hidden',
-                  socialButtonsBlockButton:
-                    'rounded-lg border-gray-200 hover:bg-gray-50 transition-colors',
-                  formButtonPrimary:
-                    'bg-gradient-to-r from-gray-700 to-gray-900 hover:from-gray-800 hover:to-black transition-all duration-200',
-                  footerActionLink: 'text-gray-600 hover:text-gray-900 font-medium',
-                  formFieldInput:
-                    'rounded-lg border-gray-200 focus:border-gray-400 focus:ring-gray-400',
-                  identityPreviewEditButton: 'text-gray-600 hover:text-gray-900',
-                  formFieldLabel: 'text-gray-700 font-medium',
-                },
-                layout: {
-                  socialButtonsPlacement: 'top',
-                  socialButtonsVariant: 'blockButton',
-                },
-              }}
-            />
+          {/* Sign In Form */}
+          <div className="bg-white rounded-2xl shadow-xl p-8">
+            <form onSubmit={handleSignIn} className="space-y-4">
+              {error && (
+                <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                  {error}
+                </div>
+              )}
+
+              <div>
+                <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+                  이메일
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-gray-400 focus:border-transparent"
+                  placeholder="your@email.com"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+                  비밀번호
+                </label>
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-gray-400 focus:border-transparent"
+                  placeholder="••••••••"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 px-4 bg-gradient-to-r from-gray-700 to-gray-900 text-white font-medium rounded-lg hover:from-gray-800 hover:to-black transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    로그인 중...
+                  </>
+                ) : (
+                  '로그인'
+                )}
+              </button>
+            </form>
+
+            <div className="mt-6">
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-200" />
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-2 bg-white text-gray-500">또는</span>
+                </div>
+              </div>
+
+              <div className="mt-6 space-y-3">
+                <button
+                  onClick={() => handleOAuthSignIn('google')}
+                  disabled={loading}
+                  className="w-full py-3 px-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center font-medium text-gray-700"
+                >
+                  <img src="/google-icon.svg" alt="Google" className="w-5 h-5 mr-2" />
+                  Google로 계속하기
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Sign up prompt */}
@@ -94,6 +201,19 @@ export default function SignInPage() {
               </Link>
             </div>
           </div>
+
+          {/* Test Account Info (개발 환경에서만) */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="mt-8 p-4 bg-gray-100 rounded-lg text-sm text-gray-600">
+              <p className="font-medium mb-2">테스트 계정:</p>
+              <div className="space-y-1">
+                <p>creator1@test.com (크리에이터)</p>
+                <p>business1@test.com (비즈니스)</p>
+                <p>admin@test.com (관리자)</p>
+                <p className="mt-2">비밀번호: testPassword123!</p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

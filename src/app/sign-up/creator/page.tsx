@@ -1,4 +1,7 @@
-import { SignUp } from '@clerk/nextjs';
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -9,7 +12,9 @@ import {
   TrendingUp,
   Gift,
   CheckCircle,
+  Loader2,
 } from 'lucide-react';
+import { createBrowserClient } from '@/lib/supabase/client';
 
 const incomeStructure = [
   { level: '직접 캠페인', rate: '기본 수수료', example: '월 50만원~500만원' },
@@ -42,153 +47,302 @@ const features = [
 ];
 
 export default function CreatorSignUpPage() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [referralCode, setReferralCode] = useState('');
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const supabase = createBrowserClient();
+
+  useEffect(() => {
+    // URL에서 추천 코드 가져오기
+    const ref = searchParams.get('ref');
+    if (ref) {
+      setReferralCode(ref);
+    }
+  }, [searchParams]);
+
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+
+    // 비밀번호 확인
+    if (password !== confirmPassword) {
+      setError('비밀번호가 일치하지 않습니다.');
+      setLoading(false);
+      return;
+    }
+
+    if (password.length < 8) {
+      setError('비밀번호는 최소 8자 이상이어야 합니다.');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      // 회원가입
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            role: 'creator',
+            referral_code: referralCode || undefined,
+          },
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+
+      if (signUpError) {
+        setError(signUpError.message);
+        return;
+      }
+
+      if (data.user) {
+        // 회원가입 성공 - 이메일 확인 안내 페이지로 이동
+        router.push('/auth/verify-email?email=' + encodeURIComponent(email));
+      }
+    } catch (err) {
+      setError('회원가입 중 오류가 발생했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOAuthSignUp = async (provider: 'google' | 'github') => {
+    setLoading(true);
+    setError('');
+
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback?role=creator${referralCode ? `&ref=${referralCode}` : ''}`,
+        },
+      });
+
+      if (error) {
+        setError(error.message);
+      }
+    } catch (err) {
+      setError('OAuth 회원가입 중 오류가 발생했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-emerald-50 overflow-hidden">
       {/* Background decoration */}
       <div className="absolute inset-0 bg-grid-gray-100 [mask-image:linear-gradient(to_bottom,white,transparent)]" />
 
       <div className="relative flex min-h-screen">
-        {/* Back to home */}
-        <Link
-          href="/"
-          className="absolute top-6 left-6 inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors z-10"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>홈으로</span>
-        </Link>
+        {/* Left Panel - Features */}
+        <div className="hidden lg:flex lg:w-1/2 flex-col justify-center px-12">
+          <Link
+            href="/"
+            className="absolute top-6 left-6 inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>홈으로</span>
+          </Link>
 
-        {/* Left side - Income preview */}
-        <div className="hidden lg:flex lg:w-1/2 items-center justify-center p-12 relative">
-          <div className="max-w-lg space-y-8">
-            <div>
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gradient-creator-target mb-6">
-                <UserCircle className="w-8 h-8 text-white" />
-              </div>
-              <h2 className="text-4xl font-bold mb-4">
-                당신의 영향력이
-                <span className="text-gradient-creator block">수익이 됩니다</span>
-              </h2>
-              <p className="text-lg text-gray-600">
-                8,500명의 크리에이터가 Voosting과 함께 월 평균 85만원의 추가 수익을 만들고 있습니다.
+          <div className="max-w-xl">
+            <div className="mb-8">
+              <UserCircle className="w-12 h-12 text-emerald-600 mb-4" />
+              <h1 className="text-4xl font-bold text-gray-900 mb-4">
+                크리에이터로 시작하기
+              </h1>
+              <p className="text-xl text-gray-600">
+                영향력을 수익으로 전환하고, 3단계 추천 수익으로 평생 패시브 인컴을 만들어보세요.
               </p>
             </div>
 
-            {/* Income structure preview */}
-            <div className="bg-white rounded-2xl p-6 shadow-lg">
-              <h3 className="font-semibold mb-4 flex items-center gap-2">
-                <Gift className="w-5 h-5 text-violet-600" />
+            {/* Income Structure */}
+            <div className="mb-8 p-6 bg-white rounded-2xl shadow-lg border border-emerald-100">
+              <h3 className="font-semibold text-gray-900 mb-4 flex items-center">
+                <Gift className="w-5 h-5 mr-2 text-emerald-600" />
                 수익 구조
               </h3>
               <div className="space-y-3">
                 {incomeStructure.map((item, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between p-3 rounded-lg bg-gradient-to-r from-violet-50 to-emerald-50"
-                  >
-                    <div>
+                  <div key={index} className="flex items-center justify-between p-3 bg-gradient-to-r from-emerald-50 to-violet-50 rounded-lg">
+                    <div className="flex items-center">
                       <span className="font-medium text-gray-900">{item.level}</span>
-                      <span className="ml-2 text-sm text-gray-600">({item.rate})</span>
+                      {item.rate !== '기본 수수료' && (
+                        <span className="ml-2 px-2 py-0.5 bg-emerald-600 text-white text-xs rounded-full">
+                          {item.rate}
+                        </span>
+                      )}
                     </div>
-                    <span className="text-sm font-medium text-violet-600">{item.example}</span>
+                    <span className="text-sm text-gray-600">{item.example}</span>
                   </div>
                 ))}
               </div>
-              <div className="mt-4 pt-4 border-t text-center">
-                <p className="text-sm text-gray-600 mb-1">예상 총 월 수익</p>
-                <p className="text-2xl font-bold text-gradient-creator">₩2,870,000+</p>
-              </div>
+              <p className="mt-4 text-sm text-gray-600 text-center font-medium">
+                💰 예시: 월 평균 <span className="text-emerald-600">187만원</span> 수익 가능
+              </p>
             </div>
 
             {/* Features */}
             <div className="grid grid-cols-2 gap-4">
               {features.map((feature, index) => (
-                <div key={index} className="flex gap-3">
-                  <feature.icon className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h4 className="font-medium text-gray-900 text-sm">{feature.title}</h4>
-                    <p className="text-xs text-gray-600">{feature.description}</p>
-                  </div>
+                <div key={index} className="p-4 bg-white rounded-xl shadow-sm">
+                  <feature.icon className="w-8 h-8 text-emerald-600 mb-2" />
+                  <h4 className="font-semibold text-gray-900 mb-1">{feature.title}</h4>
+                  <p className="text-sm text-gray-600">{feature.description}</p>
                 </div>
               ))}
             </div>
           </div>
-
-          {/* Decorative element */}
-          <div className="absolute bottom-0 left-0 w-96 h-96 bg-gradient-to-br from-violet-200 to-emerald-200 rounded-full blur-3xl opacity-20" />
         </div>
 
-        {/* Right side - SignUp form */}
-        <div className="flex-1 flex items-center justify-center px-4 py-12">
-          <div className="w-full max-w-md space-y-6">
-            {/* Mobile header */}
-            <div className="lg:hidden text-center space-y-4 mb-8">
-              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-gradient-creator-target">
-                <UserCircle className="w-7 h-7 text-white" />
+        {/* Right Panel - Sign Up Form */}
+        <div className="flex-1 flex items-center justify-center px-4 lg:px-8">
+          <div className="w-full max-w-md">
+            <div className="bg-white rounded-2xl shadow-xl p-8">
+              <div className="text-center mb-6">
+                <h2 className="text-2xl font-bold text-gray-900">크리에이터 회원가입</h2>
+                <p className="text-gray-600 mt-2">
+                  지금 시작하고 첫 달부터 수익을 만들어보세요
+                </p>
               </div>
-              <h1 className="text-3xl font-bold">크리에이터 회원가입</h1>
-              <p className="text-gray-600">팔로워를 수익으로 전환하는 첫 걸음</p>
-            </div>
 
-            {/* Desktop header */}
-            <div className="hidden lg:block space-y-2 text-center">
-              <h1 className="text-3xl font-bold text-gray-900">크리에이터 회원가입</h1>
-              <p className="text-gray-600">지금 시작하고 수익을 만들어보세요</p>
-            </div>
+              {referralCode && (
+                <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+                  <p className="text-sm text-emerald-700">
+                    추천 코드가 적용되었습니다: <span className="font-mono font-bold">{referralCode}</span>
+                  </p>
+                </div>
+              )}
 
-            {/* Clerk SignUp */}
-            <div className="bg-white rounded-2xl shadow-xl p-1">
-              <SignUp
-                path="/sign-up/creator"
-                routing="path"
-                signInUrl="/sign-in"
-                redirectUrl="/dashboard"
-                appearance={{
-                  elements: {
-                    rootBox: 'w-full',
-                    card: 'shadow-none bg-transparent',
-                    headerTitle: 'hidden',
-                    headerSubtitle: 'hidden',
-                    socialButtonsBlockButton:
-                      'rounded-lg border-gray-200 hover:bg-gray-50 transition-colors',
-                    formButtonPrimary:
-                      'bg-gradient-creator-target hover:shadow-lg transition-all duration-200',
-                    footerActionLink: 'text-violet-600 hover:text-violet-700 font-medium',
-                    formFieldInput:
-                      'rounded-lg border-gray-200 focus:border-violet-400 focus:ring-violet-400',
-                    identityPreviewEditButton: 'text-violet-600 hover:text-violet-700',
-                    formFieldLabel: 'text-gray-700 font-medium',
-                  },
-                  layout: {
-                    socialButtonsPlacement: 'top',
-                    socialButtonsVariant: 'blockButton',
-                  },
-                }}
-              />
-            </div>
+              <form onSubmit={handleSignUp} className="space-y-4">
+                {error && (
+                  <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                    {error}
+                  </div>
+                )}
 
-            {/* Sign in prompt */}
-            <div className="text-center">
-              <p className="text-gray-600">
+                <div>
+                  <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+                    이메일
+                  </label>
+                  <input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
+                    placeholder="creator@example.com"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+                    비밀번호
+                  </label>
+                  <input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
+                    placeholder="최소 8자 이상"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
+                    비밀번호 확인
+                  </label>
+                  <input
+                    id="confirmPassword"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
+                    placeholder="비밀번호를 다시 입력하세요"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3 px-4 bg-gradient-to-r from-emerald-500 to-violet-500 text-white font-medium rounded-lg hover:from-emerald-600 hover:to-violet-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      회원가입 중...
+                    </>
+                  ) : (
+                    '크리에이터로 시작하기'
+                  )}
+                </button>
+              </form>
+
+              <div className="mt-6">
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-gray-200" />
+                  </div>
+                  <div className="relative flex justify-center text-sm">
+                    <span className="px-2 bg-white text-gray-500">또는</span>
+                  </div>
+                </div>
+
+                <div className="mt-6 space-y-3">
+                  <button
+                    onClick={() => handleOAuthSignUp('google')}
+                    disabled={loading}
+                    className="w-full py-3 px-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center font-medium text-gray-700"
+                  >
+                    <img src="/google-icon.svg" alt="Google" className="w-5 h-5 mr-2" />
+                    Google로 계속하기
+                  </button>
+                </div>
+              </div>
+
+              <p className="mt-6 text-center text-sm text-gray-600">
                 이미 계정이 있으신가요?{' '}
-                <Link href="/sign-in" className="text-violet-600 hover:text-violet-700 font-medium">
-                  로그인하기
+                <Link href="/sign-in" className="text-emerald-600 hover:text-emerald-700 font-medium">
+                  로그인
                 </Link>
+              </p>
+
+              <p className="mt-4 text-xs text-gray-500 text-center">
+                회원가입 시{' '}
+                <Link href="/terms" className="underline">
+                  이용약관
+                </Link>
+                과{' '}
+                <Link href="/privacy" className="underline">
+                  개인정보처리방침
+                </Link>
+                에 동의합니다.
               </p>
             </div>
 
-            {/* Mobile benefits */}
-            <div className="lg:hidden pt-6 space-y-3">
-              <div className="flex items-center gap-3 text-sm">
-                <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0" />
-                <span className="text-gray-600">3단계 추천 수익 시스템</span>
+            {/* Success Indicators */}
+            <div className="mt-6 flex items-center justify-center space-x-6 text-sm text-gray-600">
+              <div className="flex items-center">
+                <CheckCircle className="w-4 h-4 text-emerald-600 mr-1" />
+                <span>수수료 무료</span>
               </div>
-              <div className="flex items-center gap-3 text-sm">
-                <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0" />
-                <span className="text-gray-600">월 평균 85만원 추가 수익</span>
+              <div className="flex items-center">
+                <CheckCircle className="w-4 h-4 text-emerald-600 mr-1" />
+                <span>1분 내 시작</span>
               </div>
-              <div className="flex items-center gap-3 text-sm">
-                <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0" />
-                <span className="text-gray-600">코딩 없는 페이지 제작</span>
+              <div className="flex items-center">
+                <CheckCircle className="w-4 h-4 text-emerald-600 mr-1" />
+                <span>언제든 해지 가능</span>
               </div>
             </div>
           </div>
@@ -196,7 +350,8 @@ export default function CreatorSignUpPage() {
       </div>
 
       {/* Decorative elements */}
-      <div className="absolute top-20 right-20 w-64 h-64 bg-gradient-to-br from-violet-200 to-emerald-200 rounded-full blur-3xl opacity-20" />
+      <div className="absolute top-20 right-20 w-64 h-64 bg-gradient-to-br from-emerald-200 to-violet-200 rounded-full blur-3xl opacity-20" />
+      <div className="absolute bottom-20 left-20 w-96 h-96 bg-gradient-to-br from-violet-200 to-emerald-200 rounded-full blur-3xl opacity-20" />
     </div>
   );
 }
