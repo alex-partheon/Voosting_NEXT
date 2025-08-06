@@ -47,7 +47,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ toasts, toast, dismiss }}>
       {children}
-      <ToastContainer />
+      <ToastContainer toasts={toasts} dismiss={dismiss} />
     </ToastContext.Provider>
   )
 }
@@ -60,22 +60,19 @@ export function useToast() {
   return context
 }
 
-function ToastContainer() {
-  const { toasts } = useToast()
-
+function ToastContainer({ toasts, dismiss }: { toasts: Toast[], dismiss: (id: string) => void }) {
   if (toasts.length === 0) return null
 
   return (
     <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm">
       {toasts.map((toast) => (
-        <ToastItem key={toast.id} toast={toast} />
+        <ToastItem key={toast.id} toast={toast} dismiss={dismiss} />
       ))}
     </div>
   )
 }
 
-function ToastItem({ toast }: { toast: Toast }) {
-  const { dismiss } = useToast()
+function ToastItem({ toast, dismiss }: { toast: Toast, dismiss: (id: string) => void }) {
 
   const icons = {
     success: CheckCircle,

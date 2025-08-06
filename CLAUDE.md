@@ -611,22 +611,16 @@ cp .env.example .env.local
 
 | Category       | Variable                            | Source Location                     | Required | Description                               |
 | -------------- | ----------------------------------- | ----------------------------------- | -------- | ----------------------------------------- |
-| **Clerk Auth** | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk Dashboard > API Keys          | ✅       | Client-side auth key                      |
-| **Clerk Auth** | `CLERK_SECRET_KEY`                  | Clerk Dashboard > API Keys          | ✅       | Server-side auth key                      |
-| **Clerk Auth** | `CLERK_WEBHOOK_SECRET`              | Clerk Dashboard > Webhooks          | ✅       | Webhook signature verification            |
-| **Supabase**   | `NEXT_PUBLIC_SUPABASE_URL`          | Supabase Dashboard > Settings > API | ✅       | Database connection URL                   |
-| **Supabase**   | `NEXT_PUBLIC_SUPABASE_ANON_KEY`     | Supabase Dashboard > Settings > API | ✅       | Client-side database key                  |
-| **Supabase**   | `SUPABASE_SERVICE_ROLE_KEY`         | Supabase Dashboard > Settings > API | ✅       | Server-side database key                  |
+| **Supabase**   | `NEXT_PUBLIC_SUPABASE_URL`          | Supabase Dashboard > Settings > API | ✅       | Supabase project URL                      |
+| **Supabase**   | `NEXT_PUBLIC_SUPABASE_ANON_KEY`     | Supabase Dashboard > Settings > API | ✅       | Client-side anonymous key                 |
+| **Supabase**   | `SUPABASE_SERVICE_ROLE_KEY`         | Supabase Dashboard > Settings > API | ✅       | Server-side service role key              |
 | **App Config** | `NEXT_PUBLIC_SITE_URL`              | Manual                              | ✅       | Base URL (default: http://localhost:3002) |
 
 #### Setup Validation Commands
 
 ```bash
 # Verify all required environment variables are set
-npm run dev 2>&1 | grep -i "missing\|undefined\|error" || echo "✅ Environment setup complete"
-
-# Test Clerk integration
-curl -H "Authorization: Bearer $CLERK_SECRET_KEY" https://api.clerk.dev/v1/users?limit=1
+pnpm dev 2>&1 | grep -i "missing\|undefined\|error" || echo "✅ Environment setup complete"
 
 # Test Supabase connection
 npx supabase status
@@ -640,13 +634,15 @@ curl -H "Host: creator.localhost:3002" http://localhost:3002/dashboard
 ```yaml
 # Development (.env.local)
 NEXT_PUBLIC_SITE_URL=http://localhost:3002
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
-CLERK_SECRET_KEY=sk_test_...
+NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_key
 
 # Production (.env.production)
 NEXT_PUBLIC_SITE_URL=https://voosting.app
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_...
-CLERK_SECRET_KEY=sk_live_...
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_production_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_production_service_key
 ```
 
 ### Local Development URLs
@@ -1107,15 +1103,15 @@ npx supabase status
 # Expected: All services running (db, api, auth disabled, storage, etc.)
 
 # Test RLS policies
-npm run supabase:test
-# Expected: All security tests pass
+pnpm supabase:reset
+# Expected: Database reset with all migrations applied
 ```
 
 ### 🔧 Implementation Status Dashboard
 
 **Current Architecture State**:
 
-- ✅ **Authentication**: Clerk + Supabase (100% functional)
+- ✅ **Authentication**: Supabase Auth (100% functional)
 - ✅ **Multi-Domain**: Middleware routing (100% tested)
 - ✅ **Database**: PostgreSQL + RLS (100% secured)
 - ✅ **Testing**: Unit + E2E tests (90%+ coverage)
@@ -1136,11 +1132,12 @@ Technical_Debt: Low # Recent refactor, clean codebase
 
 **🔴 Never Do These**:
 
-- Don't use Supabase Auth (use Clerk only)
+- Don't use Clerk Auth (project migrated to Supabase Auth)
 - Don't create separate Next.js apps for domains (use route groups)
 - Don't bypass middleware for protected routes
 - Don't hardcode user roles (always fetch from database)
-- Don't commit without running `npm run test` first
+- Don't commit without running `pnpm test` first
+- Don't use npm commands (project uses pnpm)
 
 **🟢 Always Do These**:
 

@@ -8,7 +8,7 @@
 
 #### Creator 1 (최상위 추천인)
 - **이메일**: `creator1@test.com`
-- **비밀번호**: `TestPassword123!`
+- **비밀번호**: `testPassword123!`
 - **역할**: Creator
 - **추천 코드**: `CRT001`
 - **카테고리**: ["lifestyle", "fashion"]
@@ -18,7 +18,7 @@
 
 #### Creator 2 (Level 1)
 - **이메일**: `creator2@test.com`
-- **비밀번호**: `TestPassword123!`
+- **비밀번호**: `testPassword123!`
 - **역할**: Creator
 - **추천 코드**: `CRT002`
 - **카테고리**: ["beauty", "lifestyle"]
@@ -28,7 +28,7 @@
 
 #### Creator 3 (Level 2)
 - **이메일**: `creator3@test.com`
-- **비밀번호**: `TestPassword123!`
+- **비밀번호**: `testPassword123!`
 - **역할**: Creator
 - **추천 코드**: `CRT003`
 - **카테고리**: ["tech", "gaming"]
@@ -40,7 +40,7 @@
 
 #### Business 1
 - **이메일**: `business1@test.com`
-- **비밀번호**: `TestPassword123!`
+- **비밀번호**: `testPassword123!`
 - **역할**: Business
 - **추천 코드**: `BIZ001`
 - **회사명**: 테스트 컴퍼니 1
@@ -49,7 +49,7 @@
 
 #### Business 2
 - **이메일**: `business2@test.com`
-- **비밀번호**: `TestPassword123!`
+- **비밀번호**: `testPassword123!`
 - **역할**: Business
 - **추천 코드**: `BIZ002`
 - **회사명**: 테스트 컴퍼니 2
@@ -60,7 +60,7 @@
 
 #### Admin
 - **이메일**: `admin@test.com`
-- **비밀번호**: `TestPassword123!`
+- **비밀번호**: `testPassword123!`
 - **역할**: Admin
 - **추천 코드**: `ADM001`
 - **추천 관계**: 없음

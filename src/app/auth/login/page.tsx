@@ -1,29 +1,29 @@
 import { Suspense } from 'react'
-import { SignupForm } from '@/components/auth/signup-form'
+import { LoginForm } from '@/components/auth/login-form'
 
-function SignUpPageContent() {
+function LoginPageContent() {
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-4xl">
-        <SignupForm />
+        <LoginForm />
       </div>
     </div>
   )
 }
 
-export default function SignUpPage() {
+export default function LoginPage() {
   return (
     <Suspense fallback={
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
     }>
-      <SignUpPageContent />
+      <LoginPageContent />
     </Suspense>
   )
 }
 
 export const metadata = {
-  title: '회원가입 - Voosting',
-  description: 'Voosting에 가입하여 AI 기반 크리에이터 마케팅을 시작하세요',
+  title: '로그인 - Voosting',
+  description: 'Voosting 계정에 로그인하세요',
 }

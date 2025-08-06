@@ -1,40 +1,89 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Sparkles, Building2, UserCircle, Loader2 } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database.types';
 
 export default function SignInPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [supabase, setSupabase] = useState<SupabaseClient<Database> | null>(null);
   const router = useRouter();
-  const supabase = createBrowserClient();
+
+  useEffect(() => {
+    setSupabase(createBrowserClient());
+  }, []);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!supabase) return;
+    
     setLoading(true);
     setError('');
 
     try {
+      console.log('로그인 시도:', { email, password: '***' });
+      
+      // 현재 세션 상태 확인
+      const { data: sessionData } = await supabase.auth.getSession();
+      console.log('현재 세션:', sessionData);
+      
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
+      console.log('로그인 응답:', { data, error });
+
       if (error) {
+        console.error('로그인 에러:', error);
         setError(error.message);
         return;
       }
 
       if (data.user) {
-        // 로그인 성공 - 대시보드로 리다이렉트
-        router.push('/dashboard');
+        console.log('로그인 성공:', data.user);
+        
+        // 세션 확인
+        const { data: newSession } = await supabase.auth.getSession();
+        console.log('새 세션:', newSession);
+        
+        // 사용자 프로필 확인
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', data.user.id)
+          .single();
+          
+        console.log('프로필 조회:', { profile, profileError });
+        
+        // 역할에 따른 리다이렉트
+        let redirectPath = '/dashboard';
+        if (profile?.role) {
+          switch (profile.role) {
+            case 'creator':
+              redirectPath = '/creator/dashboard';
+              break;
+            case 'business':
+              redirectPath = '/business/dashboard';
+              break;
+            case 'admin':
+              redirectPath = '/admin/dashboard';
+              break;
+          }
+        }
+        
+        console.log('리다이렉트 경로:', redirectPath);
+        router.push(redirectPath);
       }
     } catch (err) {
+      console.error('로그인 예외:', err);
       setError('로그인 중 오류가 발생했습니다.');
     } finally {
       setLoading(false);
@@ -42,6 +91,8 @@ export default function SignInPage() {
   };
 
   const handleOAuthSignIn = async (provider: 'google' | 'github') => {
+    if (!supabase) return;
+    
     setLoading(true);
     setError('');
 
