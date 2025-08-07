@@ -19,6 +19,19 @@
       "command": "uvx",
       "args": ["mcp-server-git", "--repository", "/Users/alex/Dev/next/cashup"],
       "description": "Git 워크플로우 자동화, 코드 리뷰 지원 및 브랜치 관리"
+    },
+    "supabase": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase@latest",
+        "--read-only",
+        "--project-ref=qcyksavfyzivprsjhuxn"
+      ],
+      "env": {
+        "SUPABASE_ACCESS_TOKEN": "sbp_197d4fbc4e2458c7fbdc5d8a4d84aca4bf9eb440"
+      },
+      "description": "Supabase 데이터베이스 관리, 인증 사용자 생성 및 프로필 동기화"
     }
   }
 }

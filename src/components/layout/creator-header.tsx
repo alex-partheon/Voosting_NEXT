@@ -61,10 +61,10 @@ export function CreatorHeader() {
           {/* Desktop CTA */}
           <div className="hidden md:flex md:items-center md:gap-4">
             <Button variant="ghost" asChild>
-              <Link href="/sign-in">로그인</Link>
+              <Link href="/auth/sign-in">로그인</Link>
             </Button>
             <Button asChild className="bg-mint-600 hover:bg-mint-700 text-white">
-              <Link href="/sign-up/creator">크리에이터 시작하기</Link>
+              <Link href="/auth/sign-up/creator">크리에이터 시작하기</Link>
             </Button>
           </div>
 
@@ -112,10 +112,10 @@ export function CreatorHeader() {
               ))}
               <div className="mt-4 space-y-2 px-3">
                 <Button variant="outline" asChild className="w-full">
-                  <Link href="/sign-in">로그인</Link>
+                  <Link href="/auth/sign-in">로그인</Link>
                 </Button>
                 <Button asChild className="w-full bg-mint-600 hover:bg-mint-700 text-white">
-                  <Link href="/sign-up/creator">크리에이터 시작하기</Link>
+                  <Link href="/auth/sign-up/creator">크리에이터 시작하기</Link>
                 </Button>
               </div>
             </div>

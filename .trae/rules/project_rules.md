@@ -322,3 +322,92 @@ npx @tailwindcss/upgrade
 ### shadcn/ui와의 호환성
 
 shadcn/ui 컴포넌트는 Tailwind CSS v4와 완전 호환됩니다. 기존 컴포넌트 사용법은 동일하게 유지됩니다.
+
+## 개발 환경 제약사항
+
+### Docker Desktop 사용 금지
+- **Docker Desktop 사용 금지**: 로컬 개발 환경에서 Docker Desktop을 사용하지 않음
+- **Supabase 로컬 환경**: Docker 의존성 없이 대안 방법 사용
+- **컨테이너 기반 서비스**: 필요시 다른 컨테이너 솔루션 검토
+
+### Supabase 작업 지침
+- **MCP 서버 전용**: 모든 Supabase 관련 업무는 MCP 서버를 통해서만 진행
+- **CLI 사용 금지**: Supabase CLI 직접 사용 금지
+- **데이터베이스 작업**: MCP 서버를 통한 쿼리 실행 및 스키마 관리
+- **계정 관리**: MCP 서버를 통한 사용자 생성 및 관리
+
+## 테스트 계정 생성 및 관리
+
+### 테스트 계정 구조
+
+프로젝트는 6개의 역할별 테스트 계정을 포함합니다:
+
+- **크리에이터 계정**: creator1@test.com, creator2@test.com, creator3@test.com
+- **비즈니스 계정**: business1@test.com, business2@test.com
+- **관리자 계정**: admin@test.com
+- **공통 비밀번호**: testPassword123!
+
+### 추천 체인 구조
+
+3단계 추천 체인이 구현되어 있습니다:
+- creator1@test.com (최상위)
+- creator2@test.com (creator1에 의해 추천)
+- creator3@test.com (creator2에 의해 추천)
+
+### 테스트 계정 생성 명령어
+
+```bash
+npm run test:accounts:create  # 모든 테스트 계정 생성
+npm run test:data:create      # 테스트 데이터 생성
+npm run test:accounts:verify  # 계정 검증
+npm run test:accounts:reset   # 테스트 데이터 초기화
+```
+
+### 테스트 계정 생성 스크립트
+
+- **파일 위치**: `/scripts/create-test-accounts.ts`
+- **기능**: Supabase Auth 사용자 생성 및 프로필 설정
+- **추천 관계**: `referred_by` 필드를 통한 추천인 ID 매핑
+- **사용자 ID 매핑**: `userIdMap`을 사용하여 추천 체인 구현
+
+### 알려진 문제 및 해결 방법
+
+#### Supabase Auth 데이터베이스 오류
+
+**문제**: `Database error creating new user` 오류 발생
+
+**원인**: 
+- 데이터베이스 트리거 또는 제약 조건 문제
+- RLS 정책 충돌 가능성
+- Supabase 서비스 일시적 문제
+
+**해결 방법**:
+1. 기존 계정 확인 후 개별 생성 시도
+2. 트리거 상태 확인 및 재생성
+3. RLS 정책 검토
+4. Supabase 서비스 상태 확인
+
+**문제 해결 순서**:
+```bash
+# 1. 기존 사용자 확인
+npx tsx scripts/verify-auth-fix.ts
+
+# 2. 개별 계정 생성 시도
+node create-remaining-accounts.js
+
+# 3. 데이터베이스 상태 확인
+npm run supabase:db:status
+```
+
+### 테스트 환경 문서
+
+- **메인 가이드**: `/docs/test-accounts/README.md`
+- **계정 목록**: `/docs/test-accounts/account-list.md`
+- **스크립트 문서**: `/docs/scripts/test-accounts.md`
+
+### 주의사항
+
+1. **환경 변수 확인**: Supabase URL과 Service Role Key가 올바르게 설정되어 있는지 확인
+2. **권한 검증**: 테스트 계정 생성 시 적절한 권한이 있는지 확인
+3. **데이터 정합성**: 추천 체인이 올바르게 설정되었는지 검증
+4. **임시 파일 정리**: 테스트 완료 후 임시 스크립트 파일 삭제

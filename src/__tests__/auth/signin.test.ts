@@ -27,8 +27,8 @@ const mockSupabase: MockSupabase = {
 };
 
 // Mock the createClient function
-vi.mock('@supabase/supabase-js', () => ({
-  createClient: vi.fn(() => mockSupabase),
+jest.mock('@supabase/supabase-js', () => ({
+  createClient: jest.fn(() => mockSupabase),
 }));
 
 const supabase = mockSupabase;

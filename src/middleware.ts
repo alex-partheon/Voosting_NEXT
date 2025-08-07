@@ -5,133 +5,52 @@ import type { Database } from '@/types/database.types';
 import {
   getDomainType,
   rewriteUrlForDomain,
-  isDomainRoleMatch,
-  getDefaultRedirectPath,
   getDomainFromHost,
 } from '@/lib/middleware-utils';
-
-/**
- * 보호된 경로 정의
- */
-const protectedRoutes = {
-  // 인증이 필요한 경로
-  auth: [
-    '/dashboard',
-    '/profile',
-    '/campaigns/create',
-    '/campaigns/manage',
-    '/applications',
-    '/earnings',
-    '/settings',
-  ],
-
-  // 크리에이터 전용 경로
-  creator: [
-    '/creator',
-    '/creator/dashboard',
-    '/creator/campaigns',
-    '/creator/applications',
-    '/creator/earnings',
-  ],
-
-  // 비즈니스 전용 경로
-  business: [
-    '/business',
-    '/business/dashboard',
-    '/business/campaigns',
-    '/business/creators',
-    '/business/analytics',
-  ],
-
-  // 관리자 전용 경로
-  admin: [
-    '/admin',
-    '/admin/dashboard',
-    '/admin/users',
-    '/admin/campaigns',
-    '/admin/analytics',
-    '/admin/settings',
-  ],
-};
-
-/**
- * 공개 경로 (인증 없이 접근 가능)
- */
-const publicRoutes = [
-  '/',
-  '/about',
-  '/contact',
-  '/pricing',
-  '/service',
-  '/creators',
-  '/creators/service',
-  '/creators/calculator',
-  '/sign-in',
-  '/sign-up',
-  '/auth/callback',
-  '/auth/confirm',
-];
-
-/**
- * 공개 경로인지 확인하는 함수
- */
-function isPublicRoute(pathname: string): boolean {
-  return publicRoutes.some((route) => {
-    return pathname === route || pathname.startsWith(`${route}/`);
-  });
-}
-
-/**
- * 경로가 보호된 경로인지 확인
- */
-function isProtectedRoute(pathname: string): boolean {
-  return Object.values(protectedRoutes)
-    .flat()
-    .some((route) => pathname.startsWith(route));
-}
+import {
+  AUTH_ROUTES,
+  DASHBOARD_ROUTES,
+  REDIRECT_PARAM,
+  USER_ROLES,
+  isProtectedRoute,
+  isPublicRoute,
+  isDomainRoleMatch,
+  getRoleBasedRedirect,
+  validateRedirectUrl,
+  sanitizeRedirectUrl,
+} from '@/lib/auth-constants';
 
 /**
  * 사용자 역할에 따른 접근 권한 확인
  */
 function hasRouteAccess(pathname: string, userRole: string): boolean {
   // 관리자는 모든 경로에 접근 가능
-  if (userRole === 'admin') {
+  if (userRole === USER_ROLES.ADMIN) {
     return true;
   }
 
-  // 크리에이터 전용 경로 확인
-  if (protectedRoutes.creator.some((route) => pathname.startsWith(route))) {
-    return userRole === 'creator';
-  }
-
-  // 비즈니스 전용 경로 확인
-  if (protectedRoutes.business.some((route) => pathname.startsWith(route))) {
-    return userRole === 'business';
-  }
-
   // 관리자 전용 경로 확인
-  if (protectedRoutes.admin.some((route) => pathname.startsWith(route))) {
-    return userRole === 'admin';
+  if (pathname.startsWith('/admin')) {
+    return userRole === USER_ROLES.ADMIN;
   }
 
-  // 일반 보호된 경로는 모든 인증된 사용자가 접근 가능
+  // 통합 대시보드는 모든 인증된 사용자가 접근 가능
+  if (pathname === '/dashboard' || pathname.startsWith('/dashboard/')) {
+    return true;
+  }
+
+  // 프로필 및 설정은 모든 인증된 사용자가 접근 가능
+  if (pathname.startsWith('/profile') || pathname.startsWith('/settings')) {
+    return true;
+  }
+
+  // 레거시 경로들 (creator/*, business/*) - 통합 대시보드로 리다이렉트
+  if (pathname.startsWith('/creator/') || pathname.startsWith('/business/')) {
+    return true; // 일단 접근 허용 후 리다이렉트 처리
+  }
+
+  // 기타 보호된 경로는 모든 인증된 사용자가 접근 가능
   return true;
-}
-
-/**
- * 역할별 기본 대시보드 경로 반환
- */
-function getDefaultDashboard(userRole: string): string {
-  switch (userRole) {
-    case 'creator':
-      return '/creator/dashboard';
-    case 'business':
-      return '/business/dashboard';
-    case 'admin':
-      return '/admin/dashboard';
-    default:
-      return '/dashboard';
-  }
 }
 
 export async function middleware(req: NextRequest) {
@@ -200,9 +119,9 @@ export async function middleware(req: NextRequest) {
     // 공개 경로 처리
     if (isPublicRoute(url.pathname)) {
       // 이미 로그인한 사용자가 로그인 페이지에 접근하면 대시보드로 리다이렉트
-      const { data: { user }, error } = await supabase.auth.getUser();
+      const { data: { user } } = await supabase.auth.getUser();
       
-      if (user && (url.pathname === '/sign-in' || url.pathname === '/sign-up')) {
+      if (user && (url.pathname === AUTH_ROUTES.SIGN_IN || url.pathname.startsWith(AUTH_ROUTES.SIGN_UP))) {
         try {
           const { data: profile } = await supabase
             .from('profiles')
@@ -210,19 +129,21 @@ export async function middleware(req: NextRequest) {
             .eq('id', user.id)
             .single();
 
-          const userRole = profile?.role || 'creator';
+          const userRole = profile?.role || USER_ROLES.CREATOR;
 
           // 도메인과 역할이 일치하는지 확인
           if (isDomainRoleMatch(domainType, userRole)) {
-            const dashboardUrl = getDefaultDashboard(userRole);
+            const dashboardUrl = getRoleBasedRedirect(userRole);
             return NextResponse.redirect(new URL(dashboardUrl, req.url));
           } else {
             // 역할에 맞는 도메인으로 리다이렉트
-            const redirectPath = getDefaultRedirectPath(userRole);
+            const redirectPath = getRoleBasedRedirect(userRole);
             return NextResponse.redirect(new URL(redirectPath, req.url));
           }
         } catch (error) {
           console.error('Error fetching user profile for redirect:', error);
+          // 데이터베이스 오류 시 기본 대시보드로 리다이렉트
+          return NextResponse.redirect(new URL(DASHBOARD_ROUTES.DEFAULT, req.url));
         }
       }
 
@@ -236,12 +157,32 @@ export async function middleware(req: NextRequest) {
 
     // 보호된 경로에 대한 인증 확인
     if (isProtectedRoute(url.pathname)) {
-      const { data: { user }, error } = await supabase.auth.getUser();
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      
+      // 세션 만료 또는 인증 오류 처리
+      if (authError) {
+        console.error('Authentication error:', authError);
+        const redirectUrl = new URL(AUTH_ROUTES.SIGN_IN, req.url);
+        
+        // 안전한 리다이렉트 URL 설정
+        const safeRedirectPath = sanitizeRedirectUrl(rewrittenPath);
+        if (validateRedirectUrl(safeRedirectPath)) {
+          redirectUrl.searchParams.set(REDIRECT_PARAM, safeRedirectPath);
+        }
+        
+        return NextResponse.redirect(redirectUrl);
+      }
       
       if (!user) {
         // 인증되지 않은 사용자는 로그인 페이지로 리다이렉트
-        const redirectUrl = new URL('/sign-in', req.url);
-        redirectUrl.searchParams.set('redirect_url', rewrittenPath);
+        const redirectUrl = new URL(AUTH_ROUTES.SIGN_IN, req.url);
+        
+        // 안전한 리다이렉트 URL 설정
+        const safeRedirectPath = sanitizeRedirectUrl(rewrittenPath);
+        if (validateRedirectUrl(safeRedirectPath)) {
+          redirectUrl.searchParams.set(REDIRECT_PARAM, safeRedirectPath);
+        }
+        
         return NextResponse.redirect(redirectUrl);
       }
 
@@ -255,26 +196,40 @@ export async function middleware(req: NextRequest) {
 
         if (profileError || !profile) {
           console.error('Error fetching user profile:', profileError);
-          const redirectUrl = new URL('/sign-in', req.url);
+          
+          // 프로필이 없는 경우 프로필 생성 페이지로 리다이렉트 (필요시)
+          // 또는 기본 역할로 처리
+          const redirectUrl = new URL(AUTH_ROUTES.SIGN_IN, req.url);
+          redirectUrl.searchParams.set('error', 'profile_not_found');
           return NextResponse.redirect(redirectUrl);
         }
 
         // 도메인과 사용자 역할 일치 확인
         if (!isDomainRoleMatch(domainType, profile.role)) {
           // 사용자의 역할에 맞는 도메인으로 리다이렉트
-          const correctPath = getDefaultRedirectPath(profile.role);
+          const correctPath = getRoleBasedRedirect(profile.role);
           return NextResponse.redirect(new URL(correctPath, req.url));
+        }
+
+        // 레거시 대시보드 경로 리다이렉트 처리
+        if (url.pathname.startsWith('/creator/dashboard') || url.pathname.startsWith('/business/dashboard')) {
+          // 통합 대시보드로 리다이렉트
+          console.log('[Middleware] Redirecting legacy dashboard path to unified dashboard');
+          return NextResponse.redirect(new URL(DASHBOARD_ROUTES.DEFAULT, req.url));
         }
 
         // 역할별 접근 권한 확인
         if (!hasRouteAccess(url.pathname, profile.role)) {
           // 권한이 없는 경우 해당 역할의 기본 대시보드로 리다이렉트
-          const dashboardUrl = getDefaultDashboard(profile.role);
+          const dashboardUrl = getRoleBasedRedirect(profile.role);
           return NextResponse.redirect(new URL(dashboardUrl, req.url));
         }
       } catch (error) {
         console.error('Error in protected route handling:', error);
-        const redirectUrl = new URL('/sign-in', req.url);
+        
+        // 데이터베이스 오류 시 안전한 폴백
+        const redirectUrl = new URL(AUTH_ROUTES.SIGN_IN, req.url);
+        redirectUrl.searchParams.set('error', 'database_error');
         return NextResponse.redirect(redirectUrl);
       }
     }
@@ -290,7 +245,9 @@ export async function middleware(req: NextRequest) {
 
     // 오류 발생 시 공개 경로가 아니면 로그인 페이지로 리다이렉트
     if (!isPublicRoute(pathname)) {
-      return NextResponse.redirect(new URL('/sign-in', req.url));
+      const redirectUrl = new URL(AUTH_ROUTES.SIGN_IN, req.url);
+      redirectUrl.searchParams.set('error', 'middleware_error');
+      return NextResponse.redirect(redirectUrl);
     }
 
     return response;

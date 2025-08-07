@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next';
+import { withPayload } from '@payloadcms/next/withPayload';
 
 const nextConfig: NextConfig = {
   eslint: {
@@ -12,6 +13,12 @@ const nextConfig: NextConfig = {
     // your project has type errors.
     ignoreBuildErrors: true,
   },
+  // Allow cross-origin requests from specific IPs during development
+  allowedDevOrigins: [
+    '192.168.0.75',
+    '*.local',
+    'localhost',
+  ],
 };
 
-export default nextConfig;
+export default withPayload(nextConfig);

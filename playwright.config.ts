@@ -21,6 +21,17 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: 'html',
+
+  /* Global setup and teardown for test environment */
+  globalSetup: './test/auth-test-setup.ts',
+  globalTeardown: './test/auth-test-setup.ts',
+
+  /* Timeout settings for auth tests */
+  timeout: 30 * 1000, // 30 seconds for auth flows
+  expect: {
+    timeout: 10 * 1000 // 10 seconds for assertions
+  },
+
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
@@ -31,6 +42,9 @@ export default defineConfig({
 
     /* Screenshot on failure */
     screenshot: 'only-on-failure',
+
+    /* Video recording for failed tests */
+    video: 'retain-on-failure',
   },
 
   /* Configure projects for major browsers */

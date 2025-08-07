@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Building2, CheckCircle, TrendingUp, Target, Shield, Clock, Loader2 } from 'lucide-react';
+import { ArrowLeft, Building2, CheckCircle, TrendingUp, Target, Shield, Clock, Loader2, Chrome } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
 
 const benefits = [
@@ -295,7 +295,7 @@ export default function BusinessSignUpPage() {
                     disabled={loading}
                     className="w-full py-3 px-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center font-medium text-gray-700"
                   >
-                    <img src="/google-icon.svg" alt="Google" className="w-5 h-5 mr-2" />
+                    <Chrome className="w-5 h-5 mr-2" />
                     Google로 계속하기
                   </button>
                 </div>
@@ -303,7 +303,7 @@ export default function BusinessSignUpPage() {
 
               <p className="mt-6 text-center text-sm text-gray-600">
                 이미 계정이 있으신가요?{' '}
-                <Link href="/sign-in" className="text-cyan-600 hover:text-cyan-700 font-medium">
+                <Link href="/auth/sign-in" className="text-cyan-600 hover:text-cyan-700 font-medium">
                   로그인
                 </Link>
               </p>

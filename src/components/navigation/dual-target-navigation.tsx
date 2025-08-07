@@ -20,8 +20,8 @@ const businessNavItems: NavItem[] = [
   { label: '서비스', href: '/service' },
   { label: '요금제', href: '/pricing' },
   { label: '문의하기', href: '/contact' },
-  { label: '로그인', href: '/sign-in' },
-  { label: '무료로 시작하기', href: '/sign-up', isButton: true, isPrimary: true },
+  { label: '로그인', href: '/auth/sign-in' },
+  { label: '무료로 시작하기', href: '/auth/sign-up', isButton: true, isPrimary: true },
 ];
 
 const creatorNavItems: NavItem[] = [
@@ -29,8 +29,8 @@ const creatorNavItems: NavItem[] = [
   { label: '비즈니스', href: '/' },
   { label: '서비스', href: '/creators/service' },
   { label: '수익 계산기', href: '/creators/calculator' },
-  { label: '로그인', href: '/sign-in' },
-  { label: '무료로 시작하기', href: '/sign-up', isButton: true, isPrimary: true },
+  { label: '로그인', href: '/auth/sign-in' },
+  { label: '무료로 시작하기', href: '/auth/sign-up', isButton: true, isPrimary: true },
 ];
 
 export function DualTargetNavigation() {
@@ -111,31 +111,7 @@ export function DualTargetNavigation() {
             ))}
           </div>
 
-          {/* Target Switcher - Desktop */}
-          <div className="hidden lg:flex items-center gap-2">
-            <button
-              onClick={() => (window.location.href = '/')}
-              className={cn(
-                'px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200',
-                target === 'business'
-                  ? 'bg-cyan-100 text-cyan-700'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
-              )}
-            >
-              비즈니스
-            </button>
-            <button
-              onClick={() => (window.location.href = '/creators')}
-              className={cn(
-                'px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200',
-                target === 'creator'
-                  ? 'bg-violet-100 text-violet-700'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
-              )}
-            >
-              크리에이터
-            </button>
-          </div>
+
 
           {/* Mobile Menu Button */}
           <button
@@ -157,35 +133,7 @@ export function DualTargetNavigation() {
         )}
       >
         <div className="p-4 space-y-3">
-          {/* Target Switcher - Mobile */}
-          <div className="flex gap-2 mb-4">
-            <button
-              onClick={() => {
-                window.location.href = '/';
-                setIsMobileMenuOpen(false);
-              }}
-              className={cn(
-                'flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200',
-                target === 'business' ? 'bg-cyan-100 text-cyan-700' : 'bg-gray-100 text-gray-600',
-              )}
-            >
-              비즈니스
-            </button>
-            <button
-              onClick={() => {
-                window.location.href = '/creators';
-                setIsMobileMenuOpen(false);
-              }}
-              className={cn(
-                'flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200',
-                target === 'creator'
-                  ? 'bg-violet-100 text-violet-700'
-                  : 'bg-gray-100 text-gray-600',
-              )}
-            >
-              크리에이터
-            </button>
-          </div>
+
 
           {navItems.map((item) => (
             <Link
